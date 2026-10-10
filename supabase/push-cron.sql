@@ -2,7 +2,8 @@
 -- À exécuter UNE fois dans Supabase > SQL Editor, après avoir déployé la fonction « push » et défini ses secrets (voir README).
 -- Remplacez les trois valeurs entre < >. L'heure est en UTC : 07:00 UTC = 08:00 à Bandundu / Kinshasa.
 --
---   <ADRESSE_DU_PROJET>  ex. https://abcdefgh.supabase.co
+--   <ADRESSE_DU_PROJET>  ex. https://abcdefgh.supabase.co  (la fonction s'appelle ici « push » ; si Supabase vous a imposé un autre nom,
+--                        remplacez /functions/v1/push par /functions/v1/<ce nom>, et mettez le même nom dans pushFunction de config.js)
 --   <CLE_ANON>           la clé « anon public » (celle de config.js)
 --   <CRON_SECRET>        le même texte que le secret CRON_SECRET de la fonction
 

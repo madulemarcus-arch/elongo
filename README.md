@@ -49,7 +49,7 @@ Les relances individuelles des retardataires restent des liens WhatsApp (bouton 
 **Mise en place sur Supabase (une seule fois) :**
 1. **SQL Editor** : relancez `supabase/schema.sql` en entier (il crée la table `push_subscriptions`).
 2. **Clés VAPID** : `npx web-push generate-vapid-keys`. Mettez la clé *publique* dans `vapidPublicKey` de `config.js`.
-3. **Edge Functions → Deploy a new function → Via Editor** : nom **`push`**, collez tout `supabase/functions/push/index.ts`, laissez « Verify JWT » activé, puis Deploy.
+3. **Edge Functions → Deploy a new function → Via Editor** : nom **`push`** (si l'éditeur vous impose un autre nom, notez-le : il se met dans `pushFunction` de `config.js` et dans l'adresse de `push-cron.sql`), collez tout `supabase/functions/push/index.ts`, laissez « Verify JWT » activé, puis Deploy.
 4. **Edge Functions → Secrets** : `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (la clé privée n'est jamais mise dans le dépôt), `VAPID_SUBJECT` (`mailto:votre@adresse`) et `CRON_SECRET` (un long texte au hasard).
 5. **Database → Extensions** : activez `pg_cron` et `pg_net`, puis exécutez `supabase/push-cron.sql` après avoir remplacé les trois valeurs entre `< >`.
 6. Republiez le site (incrémenter `VERSION` dans `sw.js` si un fichier de l'appli a changé).

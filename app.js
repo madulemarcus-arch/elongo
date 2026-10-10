@@ -84,7 +84,8 @@
       if (sub) { const endpoint = sub.endpoint; await sub.unsubscribe(); await B.remove('push_subscriptions', { endpoint }); }
     } catch (e) { /* best effort */ }
   }
-  const notify = body => { B.invoke('push', body).catch(() => {}); };
+  const PUSH_FN = (window.LISANGA_CONFIG || {}).pushFunction || 'push';   // slug of the Edge Function (Supabase may force another name)
+  const notify = body => { B.invoke(PUSH_FN, body).catch(() => {}); };
 
   // ---------- Data loading ----------
   const normT = t => Object.assign({}, t, { amount: Number(t.amount), penalty: Number(t.penalty) });
