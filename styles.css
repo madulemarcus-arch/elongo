@@ -225,3 +225,13 @@ body.locked > *:not(#lockScreen) { visibility: hidden; }
 .calkey .k.cur { border: 2px solid var(--coin); } .calkey .k.r0 { background: var(--tint); } .calkey .k.served { background: var(--ok-tint); opacity: .6; }
 @media (max-width: 420px) { .cd { min-height: 46px; font-size: .82rem; padding: 3px; } .cb { font-size: .62rem; padding: 2px 4px; } }
 .calrow .grow { flex: 1 1 170px; }
+
+/* Calendar days are buttons: reset the generic button look, add the day report cues */
+button.cd { font: inherit; font-weight: 500; color: var(--ink); text-align: left; cursor: pointer; padding: 4px 4px 2px; background: none; width: 100%; }
+button.cd.r0 { background: var(--tint); } button.cd.r1 { background: var(--coin-tint); } button.cd.r2 { background: var(--ok-tint); }
+button.cd:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.cd.paid { box-shadow: inset 0 -3px 0 var(--ok); }
+.cd.haspay > span::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-left: 4px; vertical-align: middle; }
+i.tk { font-style: normal; font-weight: 800; color: var(--ok); }
+.okline { color: var(--ok); font-weight: 700; margin: 4px 0; }
+.pill.warn { background: var(--warn-tint); color: var(--warn); }
