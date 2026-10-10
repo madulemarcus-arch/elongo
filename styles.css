@@ -256,3 +256,11 @@ button:active:not(:disabled), .tabbar a:active { transform: scale(.95); }
   button:active:not(:disabled), .tabbar a:active { transform: none; }
   .confetti-box { display: none; }
 }
+
+/* Compact Tour screen: one line per member, details in a sheet */
+.remind.compact { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: .9rem; }
+.remind.compact .versrow { margin: 0; }
+.hero .mine, .hero .remind { padding: 9px 13px; font-size: .88rem; }
+.crow .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.crow .mbar { margin: 5px 0 3px; }
+.crow .pen { font-size: .8rem; }
