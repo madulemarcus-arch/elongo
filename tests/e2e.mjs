@@ -161,6 +161,9 @@ await shot(A, '04-versement-partiel');
 // the member sees it live
 await tab(Bp, 'direct');
 await Bp.waitForSelector('table.mx td.p:has-text("40%")');
+await Bp.waitForSelector('.journal li:has-text("Versement de 4 000 FC enregistré pour Alice (M-Pesa)")');   // every member can read the journal
+assert.ok((await Bp.textContent('.journal')).includes('Marcus'), 'the journal says who recorded it');
+assert.ok((await Bp.locator('.journal li').count()) <= 8, 'the journal is shortened by default');
 await Bp.waitForSelector('.toast.show:has-text("Alice a versé")');
 step('partial payment visible live to the member');
 
@@ -215,7 +218,10 @@ const groupHref = await A.getAttribute('#contrib .chead a.lnk', 'href');
 assert.ok(decodeURIComponent(groupHref).includes('Rappel tontine « Tontine des amis », tour 1/4'));
 assert.ok(decodeURIComponent(groupHref).includes('Bénéficiaire : Marcus'));
 await openPay('Alice');
-assert.equal(await A.locator('#modalBody a.lnk').count(), 0, 'no reminder for someone who paid');
+assert.equal(await A.locator('#modalBody a.lnk:has-text("Relancer")').count(), 0, 'no reminder for someone who paid');
+const rcpt = decodeURIComponent(await A.getAttribute('#modalBody a.lnk:has-text("Reçu")', 'href'));
+assert.ok(rcpt.includes('REÇU · Tontine des amis') && rcpt.includes('Membre : Alice') && rcpt.includes('Enregistré par : Marcus'), 'receipt text: ' + rcpt);
+assert.ok(rcpt.includes('Total versé pour ce tour : 10 000 FC sur 10 000 FC (complet ✅)') || rcpt.includes('Total versé pour ce tour : 4 000 FC sur 10 000 FC, reste 6 000 FC'), 'receipt totals: ' + rcpt);
 await A.click('#modal [data-m=close]');
 step('WhatsApp reminders');
 

@@ -100,7 +100,7 @@
   // ---------- State ----------
   const S = {
     user: null, tontines: [], tid: null, cfg: null, view: '', arg: '',
-    allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [],
+    allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [],
     loaded: false, members: [], pending: [], preview: null,
   };
   const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
@@ -157,7 +157,8 @@
     const eq = { tontine_id: tid };
     if (name === 'tontines') { await loadTontines(); if (tid === S.tid) S.cfg = S.tontines.find(t => t.id === tid) || null; return; }
     if (name === 'contacts' && !isAdmin()) return;
-    const rows = await B.select(name, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
+    if (name === 'journal') { try { S.journal = (await B.select('journal', { eq, order: [['created_at', false]], limit: 100 })).map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
+    const rows = await B.select(name, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
     if (tid !== S.tid) return;
     if (name === 'members') { S.allMembers = rows; S.members = rows.filter(m => m.status === 'active'); S.pending = rows.filter(m => m.status === 'pending'); }
     else if (name === 'contacts') S.contacts = new Map(rows.map(r => [r.member_id, r.phone]));
@@ -169,7 +170,8 @@
       const next = new Map(rows.map(r => [r.round, Object.assign({}, r, { amount: Number(r.amount) })]));
       if (S.loaded && !isAdmin()) next.forEach((v, k) => { if (!S.out.has(k) && nameOf(v.member_id)) toast(nameOf(v.member_id) + ' a reçu la cagnotte.'); });
       S.out = next;
-    } else if (name === 'topics') S.topics = rows;
+    } else if (name === 'journal') S.journal = rows.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) }));
+    else if (name === 'topics') S.topics = rows;
     else if (name === 'messages') {
       S.msgs = rows.reverse().map(m => Object.assign({}, m, { ts: Date.parse(m.created_at), tp: m.topic_id || 'general' }));
       const now = new Set(S.msgs.map(m => m.id));
@@ -178,7 +180,7 @@
     }
   }
   const nameOf = id => (S.allMembers.find(m => m.id === id) || {}).name;
-  const ALL = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages'];
+  const ALL = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal'];
   let unsub = null, queued = new Set(), timer = 0;
   function queue(table) {
     if (table === '*') ALL.forEach(t => queued.add(t)); else queued.add(table);
@@ -193,7 +195,7 @@
   async function openTontine() {
     if (unsub) { unsub(); unsub = null; }
     S.loaded = false; ui.known = null; ui.seen = null;
-    Object.assign(S, { allMembers: [], members: [], pending: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [] });
+    Object.assign(S, { allMembers: [], members: [], pending: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [] });
     if (!S.tid) return;
     store.set('lisanga.tid:' + S.user.id, S.tid);
     await Promise.all(ALL.map(loadTable));
@@ -244,6 +246,19 @@
   }
   const inviteLink = () => location.origin + location.pathname + '#/rejoindre/' + S.cfg.code;
   const waLink = (phone, text) => 'https://wa.me/' + (phone || '') + '?text=' + encodeURIComponent(text);
+  // The journal: every operation of an organizer is written there, readable by all members, never editable.
+  // If the table does not exist yet (schema.sql not replayed), operations still work and nothing is written.
+  async function audit(text) {
+    if (!isAdmin() || !S.tid) return;
+    try { await B.insert('journal', { tontine_id: S.tid, by_name: (chatName() || 'Organisateur').slice(0, 60), text: String(text).slice(0, 300) }); await loadTable('journal'); } catch (e) { /* journal unavailable */ }
+  }
+  const plainMoney = n => pdfNum(n) + ' ' + (S.cfg ? S.cfg.currency : '');
+  // Receipt of one versement, ready to send on WhatsApp. `x` = { a, m, round, at, by, cum }.
+  function receiptText(c, name, x) {
+    const f = n => plainMoney(n), left = c.amount - x.cum;
+    return ['🧾 REÇU · ' + c.name, 'Membre : ' + name, 'Montant : ' + f(x.a), 'Moyen : ' + methodName(x.m), 'Tour : ' + (x.round + 1), 'Date : ' + (x.at ? fmtShort(x.at) : '-'),
+      'Total versé pour ce tour : ' + f(x.cum) + ' sur ' + f(c.amount) + (left > 0 ? ', reste ' + f(left) : ' (complet ✅)'), x.by ? 'Enregistré par : ' + x.by : ''].filter(Boolean).join('\n');
+  }
 
   // ---------- Router ----------
   const TABS = ['tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
@@ -402,7 +417,7 @@
   function payDialog(id) {
     const c = S.cfg, D = derive(), m = S.members.find(x => x.id === id); if (!c || !m || D.cur >= D.n) return;
     const rec = S.pay.get(D.cur + '_' + id), a = D.amt.get(id) || 0, rest = Math.max(0, c.amount - a), paid = D.paidIds.has(id), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + rec.log.slice().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}</div></div></li>`).join('') + '</ul>' : '';
+    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + (() => { let run = 0; return rec.log.map(x => { run += Number(x.a); return Object.assign({ cum: run }, x); }); })().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}${x.by ? ' · par ' + esc(x.by) : ''}</div></div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(id)), receiptText(c, m.name, { a: Number(x.a), m: x.m || '', round: D.cur, at: x.at, by: x.by || '', cum: x.cum })))}">Reçu</a></li>`).join('') + '</ul>' : '';
     const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}" style="margin-top:8px">Pénalité ${money(pen)}${settled ? ' réglée' : ''} <button class="mini" data-act="pen" data-id="${esc(id)}" aria-pressed="${settled}"${rec ? '' : ' disabled'}>${settled ? 'Annuler' : 'Marquer réglée'}</button></div>` : '';
     const ph = !paid ? waPhone(c, S.contacts.get(id)) : '';
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">Tour ${D.cur + 1} · cotisation de ${money(c.amount)}</p>
@@ -501,6 +516,11 @@
   }
 
   // ----- live matrix -----
+  // Journal of operations: who did what and when, for everyone to see
+  function journalPanel() {
+    const all = !!ui.journalAll, list = S.journal.slice(0, all ? 60 : 8), more = S.journal.length > 8;
+    return `<div class="journal"><h3>Journal des opérations</h3><p class="hint" style="margin-top:4px">Chaque versement, annulation et remise est inscrit ici par l'organisateur. Personne ne peut le modifier.</p>${list.length ? '<ul class="list" style="margin-top:6px">' + list.map(r => `<li class="row"><span class="evic" aria-hidden="true">🧾</span><div class="grow"><div>${esc(r.text)}</div><div class="sub">${esc(r.by_name)} · ${esc(dayLabel(r.ts))} à ${esc(clock(r.ts))}</div></div></li>`).join('') + '</ul>' : '<p class="hint" style="margin-top:8px">Aucune opération enregistrée pour l\'instant.</p>'}${more ? `<p style="margin:8px 0 0"><button type="button" class="mini" data-act="journalmore">${all ? 'Réduire' : 'Voir tout (' + Math.min(S.journal.length, 60) + ')'}</button></p>` : ''}</div>`;
+  }
   function viewLive(D) {
     const c = S.cfg;
     if (!D.n) return '<section class="panel"><h2>Évolution en direct</h2><p class="empty">Rien à suivre pour le moment.</p></section>';
@@ -521,7 +541,7 @@
     return `<section class="panel" id="live"><div class="livehead"><span class="dot" aria-hidden="true"></span><h2>Évolution en direct</h2></div>
       <div class="mxwrap"><table class="mx"><thead><tr><th>Membre</th>${head}<th>Payé</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="hint" style="margin-top:8px">Chaque colonne est un tour. ✓ payé en entier, un pourcentage = versement partiel, ✗ non payé, · en attente.</p>
-      <div class="feed"><h3>Dernières nouvelles</h3>${ev.length ? '<ul class="list">' + ev.slice(0, 8).map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub" title="${e.at ? esc(fmtDate(e.at)) : ''}">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour l\'instant.</p>'}</div></section>`;
+      <div class="feed"><h3>Dernières nouvelles</h3>${ev.length ? '<ul class="list">' + ev.slice(0, 8).map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub" title="${e.at ? esc(fmtDate(e.at)) : ''}">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour l\'instant.</p>'}</div>${journalPanel()}</section>`;
   }
 
   // ----- admin -----
@@ -766,7 +786,8 @@
     S.pay.forEach(rec => {
       if (rec.member_id !== id) return;
       total += rec.amount;
-      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach(x => rows.push({ round: rec.round, a: Number(x.a), at: x.at, m: x.m || '' }));
+      let run = 0;
+      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach(x => { run += Number(x.a); rows.push({ round: rec.round, a: Number(x.a), at: x.at, m: x.m || '', by: x.by || '', cum: run }); });
     });
     rows.sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.round - a.round);
     const by = new Map();
@@ -776,12 +797,13 @@
   function memberDialog(id) {
     const m = S.allMembers.find(x => x.id === id); if (!m || !S.cfg) return;
     const st = memberStats(id), idx = S.members.findIndex(x => x.id === id), D = derive(), n = st.rows.length;
+    const me0 = myRow(), canReceipt = isAdmin() || (me0 && me0.id === id), rph = isAdmin() ? waPhone(S.cfg, S.contacts.get(id)) : '';
     const where = idx < 0 ? '' : S.out.has(idx) ? `A reçu la cagnotte (tour ${idx + 1}).` : `Passe au tour ${idx + 1} sur ${D.n}.`;
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>
       <div class="statgrid"><div><div class="big num">${n}</div><div class="sub">versement${n > 1 ? 's' : ''}</div></div><div><div class="big num">${money(st.total)}</div><div class="sub">versé en tout</div></div></div>
       <h3>Récompenses</h3>${(() => { const pu = punctuality(m), b = badgesHtml(pu); return b ? `<p class="badges">${b}</p><p class="hint">${pu.streak > 1 ? pu.streak + ' tours payés à temps d\'affilée. Bravo !' : 'Dernier tour payé avant la date de fin. Bravo !'}</p>` : '<p class="hint">Payer sa cotisation avant la fin du tour donne le badge ⭐ Ponctuel.</p>'; })()}
       <h3 style="margin-top:14px">Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
-      ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}</div></div></li>`).join('') + '</ul>' : ''}
+      ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}${r.by ? ' · par ' + esc(r.by) : ''}</div></div>${canReceipt ? `<a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(rph, receiptText(S.cfg, m.name, r)))}">Reçu</a>` : ''}</li>`).join('') + '</ul>' : ''}
       <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
     $('modal').showModal();
   }
@@ -798,6 +820,7 @@
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
+      if (act === 'journalmore') { ui.journalAll = !ui.journalAll; render(); return; }
       if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
       if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
@@ -831,11 +854,12 @@
           toast(target.name + ' est maintenant relié à son compte.'); return;
         }
         await B.update('members', { status: 'active', position: S.members.reduce((x, m) => Math.max(x, m.position), 0) + 1 }, { id });
-        await loadTable('members'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
+        await loadTable('members'); audit(r.name + ' accepté dans la tontine'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
       } else if (act === 'orga') {
         const m = S.members.find(x => x.id === id); if (!m || !isCreator()) return;
         if (ui.armed !== 'orga:' + id) { ui.armed = 'orga:' + id; render(); return; }
         ui.armed = ''; await B.update('members', { is_organizer: !m.is_organizer }, { id }); await loadTable('members');
+        audit(m.name + (m.is_organizer ? " n'est plus organisateur" : ' nommé organisateur'));
         toast(m.is_organizer ? m.name + ' est maintenant organisateur.' : m.name + " n'est plus organisateur.");
       } else if (act === 'reject') { await B.remove('members', { id }); await loadTable('members');
       } else if (act === 'copy') {
@@ -847,7 +871,7 @@
       } else if (act === 'manage') { payDialog(id); return;
       } else if (act === 'pen') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id);
-        if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); payDialog(id); }
+        if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); audit('Pénalité de ' + nameOf(id) + (rec.penalty_paid ? ' remise en attente' : ' marquée réglée') + ', tour ' + (D.cur + 1)); payDialog(id); }
       } else if (act === 'vers') {
         ui.armed = ''; const c = S.cfg, rec = S.pay.get(D.cur + '_' + id), have = paidOf(rec), inp = document.querySelector('input[data-d="v.' + id + '"]'), v = Number(inp ? inp.value : c.amount - have);
         const say = t => { const e = $('payErr'); if (e && $('modal').open) e.textContent = t; else toast(t); };   // the sheet hides the toast, so errors show inside it
@@ -857,14 +881,16 @@
         store.set('lisanga.lastmethod', method);
         const add = Math.min(v, c.amount - have); if (add <= 0) { say('Cette cotisation est déjà complète.'); return; }
         const total = have + add, today = todayISO();
-        await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today, m: method }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
+        await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today, m: method, by: chatName() || 'Organisateur', ts: new Date().toISOString() }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
         notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
+        audit('Versement de ' + plainMoney(add) + ' enregistré pour ' + nameOf(id) + ' (' + methodName(method) + '), tour ' + (D.cur + 1) + (total >= c.amount ? ', cotisation complète' : ''));
         delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close();
         toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
         buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
       } else if (act === 'unvers') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id); if (!rec) return;
-        const log = (rec.log || []).slice(0, -1);
+        const log = (rec.log || []).slice(0, -1), lastAmt = (rec.log || []).length ? rec.log[rec.log.length - 1].a : rec.amount;
+        audit('Dernier versement de ' + plainMoney(lastAmt) + ' annulé pour ' + nameOf(id) + ', tour ' + (D.cur + 1));
         if (!log.length) await B.remove('payments', eqPay(D.cur, id));
         else await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: log.reduce((t, x) => t + x.a, 0), paid_on: log[log.length - 1].at, done_on: null, log, penalty_paid: rec.penalty_paid }), 'tontine_id,round,member_id');
         delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close(); toast('Dernier versement annulé.');
@@ -873,15 +899,18 @@
         ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur, member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
         notify({ kind: 'payout', tontine_id: S.tid, round: D.cur });
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
+        audit('Cagnotte du tour ' + (D.cur + 1) + ' remise à ' + D.benef.name + ' (' + plainMoney(D.got) + ')');
         buzz([30, 40, 60]); celebrate();
       } else if (act === 'undo') {
         if (D.cur < 1) return;
         if (ui.armed !== 'undo') { ui.armed = 'undo'; render(); return; }
         const who = S.members[D.cur - 1];
+        audit('Remise du tour ' + D.cur + ' à ' + (who ? who.name : '?') + ' annulée');
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('La remise à ' + (who ? who.name : 'ce membre') + ' est annulée : son tour est de nouveau en cours.');
       } else if (act === 'unserve') {
         const i = S.members.findIndex(m => m.id === id); if (i < 0 || !S.out.has(i)) return;
         if (ui.armed !== 'unserve:' + id) { ui.armed = 'unserve:' + id; render(); return; }
+        audit('Remise du tour ' + (i + 1) + ' à ' + S.members[i].name + ' annulée');
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
         toast('La remise à ' + S.members[i].name + ' est annulée : il n\'est plus marqué comme servi.');
       } else if (act === 'up' || act === 'down') {
@@ -893,7 +922,7 @@
         await loadTable('members');
       } else if (act === 'rm') {
         if (ui.armed !== 'rm:' + id) { ui.armed = 'rm:' + id; render(); return; }
-        ui.armed = ''; await B.remove('members', { id }); await loadTable('members'); await loadTable('payments');
+        const gone = nameOf(id); ui.armed = ''; await B.remove('members', { id }); await loadTable('members'); await loadTable('payments'); audit((gone || 'Un membre') + ' retiré de la tontine');
       }
     } catch (e) { toast(friendly(e)); }
     render();
