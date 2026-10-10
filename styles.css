@@ -244,14 +244,14 @@ i.tk { font-style: normal; font-weight: 800; color: var(--ok); }
 button, .tabbar a { transition: transform .12s, box-shadow .12s, background-color .15s; }
 button:active:not(:disabled), .tabbar a:active { transform: scale(.95); }
 @keyframes pop { 0% { transform: scale(.7); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
-.tabbar a.on > span:first-child { display: inline-block; animation: pop .38s ease-out; }
+.tabbar a.on > svg:first-child { display: inline-block; animation: pop .38s ease-out; }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(244, 183, 63, .55); } 50% { box-shadow: 0 0 0 9px rgba(244, 183, 63, 0); } }
 .hero .coin:not(.late) { animation: glow 2.4s ease-in-out infinite; }
 .confetti-box { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
 .confetti { position: absolute; top: -16px; width: 9px; height: 14px; border-radius: 2px; animation: fall var(--d, 2.4s) cubic-bezier(.3, .5, .6, 1) forwards; }
 @keyframes fall { to { transform: translate(var(--x, 0), 105vh) rotate(var(--r, 360deg)); } }
 @media (prefers-reduced-motion: reduce) {
-  #view.enter > *, .tabbar a.on > span:first-child, .hero .coin { animation: none !important; }
+  #view.enter > *, .tabbar a.on > svg:first-child, .hero .coin { animation: none !important; }
   .bar i, button, .tabbar a, .toast { transition: none !important; }
   button:active:not(:disabled), .tabbar a:active { transform: none; }
   .confetti-box { display: none; }
@@ -294,3 +294,24 @@ button.ico.rec { background: var(--warn); color: #fff; border-color: var(--warn)
 .mrow, .mrow .msg { min-width: 0; }
 .msg img.aimg, .msg audio { max-width: 100%; }
 .topichead { flex-wrap: wrap; }
+
+/* Step 4: line icons in the tab bar, colored live table, login screen */
+.tabbar a svg.ti { width: 24px; height: 24px; flex: none; }
+.tabbar a.on svg.ti { stroke-width: 2.3; }
+table.mx td.y { background: var(--ok-tint); }
+table.mx td.p { background: var(--coin-tint); color: #7a5600; }
+table.mx td.n { background: var(--warn-tint); }
+table.mx td.cc { box-shadow: inset 2px 0 0 var(--coin), inset -2px 0 0 var(--coin); }
+table.mx thead th.cc { background: var(--coin); color: var(--coin-ink); }
+table.mx td:last-child { font-weight: 700; }
+.evic { flex: none; font-size: 1.25rem; width: 32px; text-align: center; }
+.authhead { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+.authhead img { border-radius: 18px; box-shadow: 0 6px 18px rgba(8, 14, 34, .25); flex: none; }
+.authhead h2 { font-size: 2rem; margin: 0; }
+.authhead .eyebrow { margin: 0; }
+.pw { position: relative; display: block; }
+.pw input { width: 100%; padding-right: 48px; }
+button.eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; padding: 0; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; border-radius: 50%; }
+button.eye.on { color: var(--accent); background: var(--tint); }
+button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
+.seg button { padding: 12px 8px; font-weight: 700; }

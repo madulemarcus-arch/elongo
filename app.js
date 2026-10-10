@@ -288,11 +288,11 @@
   // ----- auth & onboarding -----
   function viewAuth() {
     const code = sessionStorage.getItem('lisanga.code'), up = (ui.authMode || (code ? 'up' : 'in')) === 'up';   // an invited person has no account yet
-    return `<section class="panel auth"><p class="eyebrow">Tontine</p><h2>Elongo</h2><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
+    return `<section class="panel auth"><div class="authhead"><img src="icons/icon-192.png" alt="" width="72" height="72"><div><p class="eyebrow">Tontine</p><h2>Elongo</h2></div></div><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
       <form id="authForm"><label class="f">Adresse e-mail<input type="email" name="email" required autocomplete="email" inputmode="email"></label>
-      <label class="f">Mot de passe${up ? ' (6 caractères minimum)' : ''}<input type="password" name="password" required minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}"></label>
+      <label class="f">Mot de passe${up ? ' (6 caractères minimum)' : ''}<span class="pw"><input type="password" name="password" required minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form></section>`;
   }
   const createForm = () => `<section class="panel"><h2>Créer ma tontine</h2><form id="createForm" class="grid">
@@ -494,13 +494,13 @@
       return `<tr><td>${memberLink(m)}</td>${cells}<td class="num">${got}/${Math.min(D.cur + 1, D.n)}</td></tr>`;
     }).join('');
     const ev = [];
-    S.pay.forEach(v => { const n = nameOf(v.member_id); if (!n) return; ev.push({ ts: Date.parse(v.updated_at) || 0, at: v.paid_on, t: v.amount >= c.amount ? `${n} a payé toute sa cotisation du tour ${v.round + 1} (${money(v.amount)})` : `${n} a versé ${money(v.amount)} sur ${money(c.amount)} (tour ${v.round + 1})` }); });
-    S.out.forEach(v => { const n = nameOf(v.member_id); if (n) ev.push({ ts: Date.parse(v.created_at) || 0, at: v.paid_on, t: `${n} a reçu la cagnotte (tour ${v.round + 1})` }); });
+    S.pay.forEach(v => { const n = nameOf(v.member_id); if (!n) return; ev.push({ ts: Date.parse(v.updated_at) || 0, at: v.paid_on, ic: v.amount >= c.amount ? '✅' : '💸', t: v.amount >= c.amount ? `${n} a payé toute sa cotisation du tour ${v.round + 1} (${money(v.amount)})` : `${n} a versé ${money(v.amount)} sur ${money(c.amount)} (tour ${v.round + 1})` }); });
+    S.out.forEach(v => { const n = nameOf(v.member_id); if (n) ev.push({ ts: Date.parse(v.created_at) || 0, at: v.paid_on, ic: '🎁', t: `${n} a reçu la cagnotte (tour ${v.round + 1})` }); });
     ev.sort((a, b) => (b.ts - a.ts) || String(b.at).localeCompare(String(a.at)));
     return `<section class="panel" id="live"><div class="livehead"><span class="dot" aria-hidden="true"></span><h2>Évolution en direct</h2></div>
       <div class="mxwrap"><table class="mx"><thead><tr><th>Membre</th>${head}<th>Payé</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="hint" style="margin-top:8px">Chaque colonne est un tour. ✓ payé en entier, un pourcentage = versement partiel, ✗ non payé, · en attente.</p>
-      <div class="feed"><h3>Dernières nouvelles</h3>${ev.length ? '<ul class="list">' + ev.slice(0, 8).map(e => `<li class="row"><div class="grow">${esc(e.t)}</div><span class="sub">${e.at ? esc(fmtShort(e.at)) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour l\'instant.</p>'}</div></section>`;
+      <div class="feed"><h3>Dernières nouvelles</h3>${ev.length ? '<ul class="list">' + ev.slice(0, 8).map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub" title="${e.at ? esc(fmtDate(e.at)) : ''}">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour l\'instant.</p>'}</div></section>`;
   }
 
   // ----- admin -----
@@ -759,6 +759,7 @@
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
+      if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
       if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
