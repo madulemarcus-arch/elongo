@@ -318,7 +318,14 @@ await tab(A, 'calendrier');
 await A.waitForSelector('.pill.done:has-text("Reçu")');
 t = await text(A);
 assert.ok(t.replace(/\s/g, '').includes('40000FC'));
-assert.ok(t.indexOf('Marcus') < t.indexOf('Alice') && t.indexOf('Alice') < t.indexOf('Chantal') && t.indexOf('Chantal') < t.indexOf('Bob'));
+assert.deepEqual((await A.locator('.panel:has(h3:has-text("Tous les tours")) li .name').allTextContents()).map(x => x.trim()), ['Marcus', 'Alice', 'Chantal', 'Bob'], 'rounds listed in order');
+// month grid: payout days carry a badge, the next rounds are pointed out
+assert.ok(await A.locator('.calgrid .cb').count() >= 1, 'payout day badges in the month grid');
+assert.ok((await A.textContent('.nextrounds')).includes('Prochains tours'), 'next rounds card');
+assert.equal(await A.locator('.cd.today').count(), 1, 'today is marked');
+const monthNow = (await A.textContent('.calhead h3')).trim();
+if (await A.isEnabled('[data-act=calprev]')) { await A.click('[data-act=calprev]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() !== m, monthNow); await A.click('[data-act=caltoday]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() === m, monthNow); }
+else assert.ok(await A.isDisabled('[data-act=calprev]'), 'no month before the first round');
 await shot(A, '05-calendrier');
 await Bp.waitForSelector('.toast.show:has-text("Marcus a reçu la cagnotte")');
 // undo previous round, then redo it
