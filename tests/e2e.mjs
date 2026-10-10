@@ -84,6 +84,7 @@ step('settings (penalty) + manual members with phone');
 await Bp.goto(url + '#/rejoindre/' + code);
 await Bp.waitForSelector('#authForm');
 assert.ok((await text(Bp)).includes('Vous êtes invité à rejoindre une tontine'));
+assert.equal((await Bp.textContent('#authForm button.primary')).trim(), 'Créer mon compte', 'an invited person lands on the sign-up form');
 await Bp.click('[data-mode=up]');
 await Bp.fill('#authForm input[name=email]', 'chantal@example.cd');
 await Bp.fill('#authForm input[name=password]', 'secret456');

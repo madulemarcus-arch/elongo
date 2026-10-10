@@ -48,7 +48,7 @@
     allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [],
     loaded: false, members: [], pending: [], preview: null,
   };
-  const ui = { armed: '', draft: {}, authMode: 'in', copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
+  const ui = { armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
   const isAdmin = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
   const myRow = () => S.user ? S.allMembers.find(m => m.user_id === S.user.id) : null;
@@ -216,7 +216,7 @@
 
   // ----- auth & onboarding -----
   function viewAuth() {
-    const code = sessionStorage.getItem('lisanga.code'), up = ui.authMode === 'up';
+    const code = sessionStorage.getItem('lisanga.code'), up = (ui.authMode || (code ? 'up' : 'in')) === 'up';   // an invited person has no account yet
     return `<section class="panel auth"><p class="eyebrow">Tontine</p><h2>Elongo</h2><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
@@ -613,9 +613,9 @@
       if (f.id === 'authForm') {
         const email = f.email.value.trim(), password = f.password.value, err = $('authErr'); err.textContent = '';
         try {
-          if (ui.authMode === 'up') { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Confirmez votre e-mail (lien reçu par message), puis connectez-vous.'; ui.authMode = 'in'; } }
+          if (f.querySelector('button.primary').textContent.startsWith('Créer')) { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Confirmez votre e-mail (lien reçu par message), puis connectez-vous.'; ui.authMode = 'in'; } }
           else await B.signIn(email, password);
-        } catch (e) { err.textContent = friendly(e); }
+        } catch (e) { err.textContent = friendly(e) + (/Invalid login credentials/i.test(String(e && e.message)) ? " Pas encore de compte ? Appuyez sur « Créer un compte », en haut." : ''); }
       } else if (f.id === 'createForm') {
         const v = fv(f), cfg = { name: v['c.name'].trim(), amount: Number(v['c.amount']), currency: (v['c.cur'] || 'FC').trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(v['c.days'])) || 30)), start_date: v['c.start'] || todayISO(), penalty: 0, reminder_days: 3, country_code: '243', join_open: true };
         const me = (v['c.me'] || '').trim();
@@ -703,7 +703,7 @@
   (async () => {
     try { await B.init(); } catch (e) { toast(friendly(e)); }
     S.user = B.user;
-    B.onAuthChange(u => { S.user = u; ui.draft = {}; ui.authMode = 'in'; bootstrap(); });
+    B.onAuthChange(u => { S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
     await bootstrap();
     window.__lisanga = { S, ui };   // handy for debugging in the console
