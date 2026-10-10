@@ -561,17 +561,23 @@
   function totalUnread() { if (!S.tid || !S.user) return 0; seenLoad(); let n = 0; allTopics().forEach((_, id) => { n += unreadOf(id); }); return n; }
   const chatSkeleton = () => `<section class="panel chat-panel"><div class="livehead"><span class="dot" aria-hidden="true"></span><h2>Discussion du groupe</h2></div>
     <div id="topicBar" class="topics"></div>
-    <form id="topicForm" class="addrow" style="margin:0"><input id="topicIn" list="topicNames" maxlength="50" autocomplete="off" placeholder="Nouveau sujet (ex. Jean, Retard de mars)" aria-label="Titre du nouveau sujet"><datalist id="topicNames"></datalist><button type="submit">Créer le sujet</button></form>
+    <form id="topicForm" class="addrow" style="margin:0" hidden><input id="topicIn" list="topicNames" maxlength="50" autocomplete="off" placeholder="Titre du sujet (ex. Retard de mars)" aria-label="Titre du nouveau sujet"><datalist id="topicNames"></datalist><button type="submit">Créer</button></form>
     <div id="topicHead" class="topichead"></div>
     <div id="chatlog" class="chatlog" role="log" aria-live="polite" tabindex="0"></div>
     <div id="pendingBox" class="pendbox" hidden></div>
-    <form id="chatForm" class="addrow" style="margin:0"><input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message" style="min-width:12rem">
-      <button type="button" class="mini" data-act="pickfile">Joindre</button><button type="button" class="mini" id="recBtn" data-act="voice">Vocal</button><button class="primary" type="submit" id="chatSend">Envoyer</button></form>
+    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickfile" aria-label="Joindre une photo, un audio ou un PDF" title="Joindre">📎</button>
+      <input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message">
+      <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
     <input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
     <p class="hint" id="chatNote" hidden></p>
-    <p class="hint">Photos, vocaux et PDF jusqu'à ${fmtSize(B.maxFile)}. Le bouton Vocal enregistre avec le micro de votre appareil.</p></section>`;
-  function msgHtml(m) {
-    const mine = m.author_id === S.user.id, a = m.att;
+    <p class="hint">📎 photo ou PDF, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Le micro de votre appareil enregistre le vocal.</p></section>`;
+  const dayLabel = ts => { const d = new Date(ts), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1); const same = (a, b) => a.toDateString() === b.toDateString();
+    return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
+  const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const hueOf = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  function msgHtml(m, prev) {
+    const mine = m.author_id === S.user.id, a = m.att, newDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
+    const grouped = !newDay && prev.author_id === m.author_id && m.ts - prev.ts < 5 * 60000;   // same author within 5 minutes: no repeated name or avatar
     let att = '';
     if (a) {
       const v = ui.att.get(a.path);
@@ -579,7 +585,7 @@
         : `<button type="button" class="mini" data-act="showatt" data-mid="${esc(m.id)}">${a.kind === 'audio' ? 'Écouter le vocal' : a.kind === 'image' ? 'Afficher la photo' : 'Ouvrir le document'} (${esc(fmtSize(a.size))})</button>`;
       att = `<div class="att"><span class="sub">${esc(a.name)}</span><br>${body}</div>`;
     }
-    return `<div class="msg${mine ? ' me' : ''}"><b>${esc(m.author_name)}</b><span class="ts">${esc(fmtTime(m.ts))}</span>${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}">Supprimer</button>` : ''}</div>`;
+    return (newDay ? `<div class="dsep"><span>${esc(dayLabel(m.ts))}</span></div>` : '') + `<div class="mrow${mine ? ' me' : ''}${grouped ? ' grouped' : ''}">${mine ? '' : grouped ? '<span class="av sm ghost" aria-hidden="true"></span>' : `<span class="av sm" aria-hidden="true" style="--h:${hueOf(m.author_name)}">${esc(initials(m.author_name))}</span>`}<div class="msg${mine ? ' me' : ''}" title="${esc(fmtTime(m.ts))}">${mine || grouped ? '' : `<b>${esc(m.author_name)}</b>`}${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}<div class="meta"><span class="ts">${esc(clock(m.ts))}</span>${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}" aria-label="Supprimer ce message" title="Supprimer">🗑</button>` : ''}</div></div></div>`;
   }
   function renderPending() {
     const b = $('pendingBox'); if (!b) return; const p = ui.pending; b.hidden = !p;
@@ -591,17 +597,17 @@
     if (inCur.length) { const last = inCur[inCur.length - 1].ts; if ((sn.t[ui.topic] || 0) < last) { sn.t[ui.topic] = last; store.set(seenKey(), JSON.stringify(sn)); } }
     const act = id => S.msgs.reduce((x, m) => m.tp === id ? Math.max(x, m.ts) : x, 0);
     const list = [...topics.values()].sort((a, b) => a.id === 'general' ? -1 : b.id === 'general' ? 1 : (act(b.id) || Date.parse(b.created_at)) - (act(a.id) || Date.parse(a.created_at)));
-    $('topicBar').innerHTML = list.map(t => { const u = unreadOf(t.id); return `<button type="button" class="chip${t.id === ui.topic ? ' on' : ''}${t.closed ? ' closed' : ''}" data-act="topic" data-id="${esc(t.id)}" aria-pressed="${t.id === ui.topic}">${esc(t.title)}${u ? ` <span class="pill now">${u}</span>` : ''}</button>`; }).join('');
+    $('topicBar').innerHTML = list.map(t => { const u = unreadOf(t.id); return `<button type="button" class="chip${t.id === ui.topic ? ' on' : ''}${t.closed ? ' closed' : ''}" data-act="topic" data-id="${esc(t.id)}" aria-pressed="${t.id === ui.topic}">${esc(t.title)}${u ? ` <span class="pill now">${u}</span>` : ''}</button>`; }).join('') + (canChat() ? `<button type="button" class="chip add" data-act="newtopic" aria-expanded="${!!ui.newTopic}">+ Sujet</button>` : '');
     $('topicNames').innerHTML = S.members.map(m => `<option value="${esc(m.name)}">`).join('');
     const canClose = cur.id !== 'general' && (cur.author_id === S.user.id || isAdmin());
     $('topicHead').innerHTML = `<h3>${esc(cur.title)}</h3><span class="sub">${cur.id === 'general' ? 'Discussion libre pour tout le groupe' : 'Sujet ouvert par ' + esc(cur.author_name) + (cur.closed ? ', clos' : '')}</span>${canClose ? `<button type="button" class="mini" data-act="closetopic" data-id="${esc(cur.id)}">${cur.closed ? 'Rouvrir le sujet' : 'Clore le sujet'}</button>` : ''}`;
     const log = $('chatlog'), keep = log.scrollTop, near = log.scrollHeight - log.scrollTop - log.clientHeight < 60, first = !log.dataset.drawn || log.dataset.topic !== ui.topic;
     const shown = inCur.slice(-100);
-    log.innerHTML = shown.length ? shown.map(msgHtml).join('') : '<p class="hint" style="margin:8px">Aucun message dans ce sujet. Écrivez le premier !</p>';
+    log.innerHTML = shown.length ? shown.map((m, i) => msgHtml(m, shown[i - 1])).join('') : '<p class="hint" style="margin:8px">Aucun message dans ce sujet. Écrivez le premier ! 💬</p>';
     log.dataset.drawn = '1'; log.dataset.topic = ui.topic;
     log.scrollTop = first || near ? log.scrollHeight : keep;
     const can = canChat(), open = !cur.closed;
-    $('chatForm').hidden = !(can && open); $('topicForm').hidden = !can;
+    $('chatForm').hidden = !(can && open); $('topicForm').hidden = !(can && ui.newTopic);
     $('chatNote').hidden = can && open;
     $('chatNote').textContent = !can ? 'Rejoignez la tontine pour participer à la discussion.' : 'Ce sujet est clos. Rouvrez-le pour y écrire.';
     renderPending(); updateRecBtn();
@@ -630,7 +636,7 @@
       ui.pending = { blob, type, size: blob.size, name, kind }; renderPending();
     } catch (e) { toast(e && e.msg ? e.msg : 'Ce fichier ne peut pas être joint (format non lisible).'); }
   }
-  function updateRecBtn() { const b = $('recBtn'); if (b) { b.textContent = ui.rec ? 'Arrêter ●' : 'Vocal'; b.classList.toggle('rec', !!ui.rec); } }
+  function updateRecBtn() { const b = $('recBtn'); if (b) { b.textContent = ui.rec ? '⏹' : '🎤'; b.setAttribute('aria-label', ui.rec ? 'Arrêter l\'enregistrement' : 'Enregistrer un vocal'); b.classList.toggle('rec', !!ui.rec); } }
   async function toggleRec() {
     if (ui.rec) { ui.rec.stop(); return; }
     if (!navigator.mediaDevices || !window.MediaRecorder) { $('voiceIn').click(); return; }
@@ -753,6 +759,7 @@
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
+      if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
       if (act === 'pushon') { await enablePush(); return; }
@@ -898,9 +905,9 @@
       } else if (f.id === 'topicForm') {
         const title = $('topicIn').value.trim().slice(0, 50), n = chatName(); if (!title || !n) return;
         const ex = [...allTopics().values()].find(t => t.title.toLowerCase() === title.toLowerCase());
-        if (ex) { ui.topic = ex.id; $('topicIn').value = ''; renderChatParts(); return; }
+        if (ex) { ui.topic = ex.id; $('topicIn').value = ''; ui.newTopic = false; renderChatParts(); return; }
         const [t] = await B.insert('topics', { tontine_id: S.tid, title, author_name: n });
-        await loadTable('topics'); ui.topic = t.id; $('topicIn').value = ''; renderChatParts(); $('chatIn').focus();
+        await loadTable('topics'); ui.topic = t.id; $('topicIn').value = ''; ui.newTopic = false; renderChatParts(); $('chatIn').focus();
       } else if (f.id === 'chatForm') {
         const text = $('chatIn').value.trim(), n = chatName(), pend = ui.pending;
         if ((!text && !pend) || !n || ui.chatBusy) return;

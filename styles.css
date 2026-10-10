@@ -264,3 +264,33 @@ button:active:not(:disabled), .tabbar a:active { transform: scale(.95); }
 .crow .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
 .crow .mbar { margin: 5px 0 3px; }
 .crow .pen { font-size: .8rem; }
+
+/* Chat: rows with avatars, grouped bubbles, day separators, icon composer */
+.chatlog { gap: 3px; max-height: min(58vh, 540px); }
+.mrow { display: flex; align-items: flex-end; gap: 7px; margin-top: 8px; }
+.mrow.grouped { margin-top: 0; }
+.mrow.me { justify-content: flex-end; }
+.mrow .msg { max-width: calc(100% - 44px); }
+.mrow.me .msg { max-width: 88%; }
+.av.sm { width: 30px; height: 30px; font-size: .72rem; background: hsl(var(--h, 220) 55% 42%); color: #fff; }
+.av.sm.ghost { background: none; }
+.msg .meta { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 2px; }
+.msg .meta .ts { margin: 0; }
+.msg .meta button.link { text-decoration: none; font-size: .8rem; opacity: .6; padding: 0 2px; }
+.dsep { text-align: center; margin: 12px 0 4px; }
+.dsep span { display: inline-block; font-size: .75rem; font-weight: 600; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 2px 12px; }
+.chip.add { border-style: dashed; color: var(--accent); }
+.composer { position: sticky; bottom: calc(88px + env(safe-area-inset-bottom)); z-index: 3; display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 26px; box-shadow: 0 6px 20px rgba(8, 14, 34, .14); }
+.composer[hidden] { display: none; }
+.composer input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 6px; }
+.composer input:focus { outline: none; }
+.composer:focus-within { border-color: var(--accent); }
+button.ico { flex: none; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; line-height: 1; }
+button.ico.send { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.ico.rec { background: var(--warn); color: #fff; border-color: var(--warn); animation: glow 1.2s ease-in-out infinite; }
+/* keep the chat inside the screen: grid tracks must be allowed to shrink */
+.chat-panel > * { min-width: 0; }
+.chatlog { grid-template-columns: minmax(0, 1fr); }
+.mrow, .mrow .msg { min-width: 0; }
+.msg img.aimg, .msg audio { max-width: 100%; }
+.topichead { flex-wrap: wrap; }
