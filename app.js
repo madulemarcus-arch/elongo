@@ -346,6 +346,7 @@
       mine = mi < D.cur ? `<div class="mine">Vous avez déjà reçu votre part (tour ${mi + 1}).</div>`
         : mi === D.cur ? `<div class="mine"><b>C'est votre tour.</b> Cagnotte de ${money(pot)} à remettre le ${esc(fmtDate(due))}.</div>`
         : `<div class="mine">Votre tour : du ${esc(fmtShort(roundStart(c, mi)))} au <b>${esc(fmtDate(roundEnd(c, mi)))}</b> (${esc(rel(roundEnd(c, mi)))}), tour ${mi + 1} sur ${D.n}.</div>`;
+      const pu = punctuality(me); if (pu.streak >= 1) mine += `<div class="mine star">⭐ ${pu.streak > 1 ? pu.streak + ' tours payés à temps d\'affilée. Bravo !' : 'Dernier tour payé à temps. Bravo !'}</div>`;
       if (!D.paidIds.has(me.id)) {
         const dd = dayDiff(due, todayISO()), pen = penOf(c, D, me), rest = c.amount - (D.amt.get(me.id) || 0);
         if (dd < 0) remind = `<div class="remind late"><b>Cotisation en retard.</b> Versez ${money(rest)} dès que possible${pen ? `. Pénalité : ${money(pen)}` : ''}.</div>`;
@@ -371,7 +372,7 @@
       + (owed ? `<p class="pen" style="margin:0 0 8px">Pénalités à percevoir : ${money(owed)}</p>` : '')
       + '<ul class="list">' + S.members.map((m, i) => {
         const paid = D.paidIds.has(m.id), rec = S.pay.get(D.cur + '_' + m.id), a = D.amt.get(m.id) || 0, rest = Math.max(0, c.amount - a), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-        return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
+        return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${punctuality(m).streak >= 1 ? ` <span class="star" title="${punctuality(m).streak} tour${punctuality(m).streak > 1 ? 's' : ''} payé${punctuality(m).streak > 1 ? 's' : ''} à temps d'affilée">⭐${punctuality(m).streak > 1 ? punctuality(m).streak : ''}</span>` : ''}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
           <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}</div>
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
           <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
@@ -722,6 +723,23 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('Fichier des versements enregistré.');
   }
 
+  // ----- punctuality: positive rewards only (no ranking, no list of late payers) -----
+  // A round is "on time" when the member had paid it in full by its end date. Rounds still running, or not started, are not judged yet.
+  function punctuality(m) {
+    const c = S.cfg, today = todayISO(), rows = paymentRows(), states = [];
+    for (let r = 0; c && r < S.members.length; r++) {
+      const start = roundStart(c, r), end = roundEnd(c, r);
+      if (start > today) break;
+      let sum = 0, on = null;
+      rows.forEach(x => { if (x.round === r && x.id === m.id) { sum += x.a; if (on === null && sum >= c.amount) on = x.at || start; } });
+      if (on !== null) states.push(on <= end ? 'ok' : 'late'); else if (end < today) states.push('missed');
+    }
+    let streak = 0; for (let i = states.length - 1; i >= 0 && states[i] === 'ok'; i--) streak++;
+    const ok = states.filter(x => x === 'ok').length;
+    return { streak, ok, total: states.length, perfect: states.length >= 3 && ok === states.length };
+  }
+  const badgesHtml = pu => [pu.streak >= 1 ? '<span class="badge-r">⭐ Ponctuel</span>' : '', pu.streak >= 2 ? `<span class="badge-r">🔥 ${pu.streak} tours d'affilée</span>` : '', pu.perfect ? '<span class="badge-r gold">🏆 Sans faute</span>' : ''].join('');
+
   // ----- member detail: number of payments, money paid, how it was sent -----
   function memberStats(id) {
     const rows = []; let total = 0;
@@ -741,7 +759,8 @@
     const where = idx < 0 ? '' : S.out.has(idx) ? `A reçu la cagnotte (tour ${idx + 1}).` : `Passe au tour ${idx + 1} sur ${D.n}.`;
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>
       <div class="statgrid"><div><div class="big num">${n}</div><div class="sub">versement${n > 1 ? 's' : ''}</div></div><div><div class="big num">${money(st.total)}</div><div class="sub">versé en tout</div></div></div>
-      <h3>Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
+      <h3>Récompenses</h3>${(() => { const pu = punctuality(m), b = badgesHtml(pu); return b ? `<p class="badges">${b}</p><p class="hint">${pu.streak > 1 ? pu.streak + ' tours payés à temps d\'affilée. Bravo !' : 'Dernier tour payé avant la date de fin. Bravo !'}</p>` : '<p class="hint">Payer sa cotisation avant la fin du tour donne le badge ⭐ Ponctuel.</p>'; })()}
+      <h3 style="margin-top:14px">Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
       ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}</div></div></li>`).join('') + '</ul>' : ''}
       <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
     $('modal').showModal();

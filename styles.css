@@ -315,3 +315,11 @@ button.eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50
 button.eye.on { color: var(--accent); background: var(--tint); }
 button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .seg button { padding: 12px 8px; font-weight: 700; }
+
+/* Step 5: positive rewards */
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.badge-r { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 99px; background: var(--coin-tint); color: #7a5600; font-weight: 700; font-size: .88rem; border: 1px solid var(--coin); }
+.badge-r.gold { background: var(--coin); color: var(--coin-ink); }
+.mine.star { background: var(--ok-tint); color: var(--ok); font-weight: 600; }
+.star { font-size: .8rem; font-weight: 700; color: #b07a00; white-space: nowrap; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge-r { color: var(--coin); background: var(--coin-tint); } :root:not([data-theme="light"]) .star { color: var(--coin); } }

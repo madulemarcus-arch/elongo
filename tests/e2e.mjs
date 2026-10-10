@@ -553,6 +553,12 @@ await A.evaluate(day => {
   d.members.filter(m => m.tontine_id === t.id && m.status === 'active').forEach(m => d.payments.push({ tontine_id: t.id, round: 3, member_id: m.id, amount: t.amount, paid_on: day, done_on: day, penalty_paid: false, log: [{ a: t.amount, at: day, m: 'mpesa' }], updated_at: new Date().toISOString() }));
   localStorage.setItem(k, JSON.stringify(d));
 }, daysAgo(0));
+// Alice paid round 1 well before its end (the earlier payments were made late, today): she earns the "Ponctuel" badge
+await A.evaluate(day => {
+  const k = 'lisanga.demo.v1', d = JSON.parse(localStorage.getItem(k)), alice = d.members.find(m => m.name === 'Alice');
+  d.payments.filter(p => p.member_id === alice.id && p.round === 0).forEach(p => { p.paid_on = day; p.done_on = day; p.log.forEach(x => { x.at = day; }); });
+  localStorage.setItem(k, JSON.stringify(d));
+}, daysAgo(5));
 await A.reload();
 await A.waitForSelector('a[data-tab=calendrier]');
 await tab(A, 'calendrier');
@@ -567,6 +573,22 @@ await shot(A, '05d-rapport-jour');
 assert.ok((await A.textContent('#modalBody')).includes('avant la date prévue'), 'the report says it was paid before the planned date');
 await A.click('#modalBody [data-m=close]');
 step('calendar: day report, round paid early ticked until the planned end');
+
+// Rewards: positive only
+await tab(A, 'tour');
+await A.waitForSelector('#contrib');
+await A.click('li:has-text("Alice") .name-link');
+await A.waitForSelector('#modal[open] h3:has-text("Récompenses")');
+assert.ok(await A.locator('#modalBody .badge-r:has-text("Ponctuel")').count() === 1, 'Alice, on time, has the Ponctuel badge');
+await shot(A, '09-recompenses');
+await A.click('#modal [data-m=close]');
+await A.click('li:has-text("Bob") .name-link');
+await A.waitForSelector('#modal[open] h3:has-text("Récompenses")');
+assert.ok(await A.locator('#modalBody .badge-r').count() === 0, 'Bob paid late: no badge, only an encouragement');
+assert.ok((await A.textContent('#modalBody')).includes('donne le badge'), 'encouragement instead of a reproach');
+await A.click('#modal [data-m=close]');
+assert.ok(await A.locator('li:has-text("Alice") .star').count() >= 1, 'a star next to Alice in the list');
+step('rewards: Ponctuel badge for an on-time member, encouragement for the others');
 
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).
