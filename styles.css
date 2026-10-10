@@ -341,3 +341,6 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 
 .journal { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .journal h3 { margin: 0; }
+
+.offline-banner { background: var(--warn-tint); color: var(--warn); font-weight: 500; }
+.offline-banner .mini { margin-left: 6px; }

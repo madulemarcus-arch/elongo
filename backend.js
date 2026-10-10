@@ -16,8 +16,14 @@
     const setUser = s => { B.user = s && s.user ? { id: s.user.id, email: s.user.email } : null; };
     const fire = () => listeners.forEach(f => f(B.user));
     B.init = async () => {
-      setUser(unwrap(await sb.auth.getSession()).session);
+      let session = null;
+      try { session = unwrap(await sb.auth.getSession()).session; } catch (e) { session = null; }
+      if (!session && navigator.onLine === false) {   // an expired token cannot be renewed without network: recognise the person from what the phone kept, so the app opens (offline)
+        try { const k = Object.keys(localStorage).find(x => /^sb-.*-auth-token$/.test(x)), v = k && JSON.parse(localStorage.getItem(k)); if (v && v.user) session = { user: v.user }; } catch (e) { /* nothing kept */ }
+      }
+      setUser(session);
       sb.auth.onAuthStateChange((ev, s) => {
+        if (!s && navigator.onLine === false && ev !== 'SIGNED_OUT') return;   // a failed renewal without network is not a sign-out
         const prev = B.user && B.user.id; setUser(s);
         if ((B.user && B.user.id) !== prev) fire();
       });

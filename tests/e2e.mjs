@@ -635,6 +635,49 @@ await A.click('#modal [data-m=close]');
 assert.ok(await A.locator('li:has-text("Alice") .star').count() >= 1, 'a star next to Alice in the list');
 step('rewards: Ponctuel badge for an on-time member, encouragement for the others');
 
+// ---------- Offline: a versement entered without network is kept, then sent when the network is back ----------
+const dbPay = (p, name) => p.evaluate(n => { const d = JSON.parse(localStorage.getItem('lisanga.demo.v1')), m = d.members.find(x => x.name === n); return d.payments.filter(x => x.member_id === m.id && x.round === 1).map(x => ({ amount: x.amount, log: x.log })); }, name);
+await tab(A, 'tour');
+await A.waitForSelector('#contrib');
+assert.deepEqual(await dbPay(A, 'Chantal'), [], 'nothing recorded for Chantal in round 2 yet');
+await ctx.setOffline(true);
+await A.waitForSelector('#offlineBanner:not([hidden])');
+await openPay('Chantal');
+await A.fill('#modalBody input.vin', '3000');
+await A.selectOption('#modalBody select.msel', 'cash_caissier');
+await A.click('#modalBody [data-act=vers]');
+await A.waitForSelector('.toast.show:has-text("gardé sur ce téléphone")');
+await A.waitForSelector('li:has-text("Chantal"):has-text("en attente d\'envoi")');
+assert.ok((await A.textContent('#offlineBanner')).includes('1 versement en attente'), 'banner counts the waiting versement');
+assert.equal((await A.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('elongo.queue.')).map(k => JSON.parse(localStorage.getItem(k)).length)))[0], 1, 'the versement is kept on the phone');
+assert.deepEqual(await dbPay(A, 'Chantal'), [], 'nothing was sent to the server while offline');
+assert.ok((await text(A)).replace(/\s/g, '').includes('Versé3000FCsur10000FC'), 'the list already shows it');
+await shot(A, '12-hors-connexion');
+await ctx.setOffline(false);
+await A.waitForSelector('.toast.show:has-text("envoyé au groupe")');
+await A.waitForSelector('#offlineBanner', { state: 'hidden' });
+const sentRows = await dbPay(A, 'Chantal');
+assert.equal(sentRows.length, 1); assert.equal(sentRows[0].amount, 3000);
+assert.equal(sentRows[0].log[0].m, 'cash_caissier'); assert.equal(sentRows[0].log[0].by, 'Marcus');
+assert.equal(await A.locator('li:has-text("Chantal"):has-text("en attente d\'envoi")').count(), 0, 'no longer waiting');
+await tab(A, 'direct');
+await A.waitForSelector('.journal li:has-text("pour Chantal (Cash au caissier)"):has-text("hors connexion")');
+// a queued versement can be cancelled before it is sent
+await tab(A, 'tour');
+await ctx.setOffline(true);
+await openPay('Bob');
+await A.fill('#modalBody input.vin', '1000');
+await A.selectOption('#modalBody select.msel', 'mpesa');
+await A.click('#modalBody [data-act=vers]');
+await A.waitForSelector('li:has-text("Bob"):has-text("en attente d\'envoi")');
+await openPay('Bob');
+await A.click('#modalBody [data-act=unvers]');
+await A.waitForSelector('li:has-text("Bob"):has-text("en attente d\'envoi")', { state: 'detached' });
+await ctx.setOffline(false);
+await A.waitForSelector('#offlineBanner', { state: 'hidden' });
+assert.deepEqual(await dbPay(A, 'Bob'), [], 'the cancelled versement was never sent');
+step('offline: versement kept on the phone, sent when the network is back, cancellable while waiting');
+
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).
 // Chromium shows no real notifications in a test, so showNotification is replaced by a recorder; the push itself goes through the real event.

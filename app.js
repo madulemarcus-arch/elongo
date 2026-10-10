@@ -144,9 +144,78 @@
   const PUSH_FN = (window.LISANGA_CONFIG || {}).pushFunction || 'push';   // slug of the Edge Function (Supabase may force another name)
   const notify = body => { B.invoke(PUSH_FN, body).catch(() => {}); };
 
+  // ---------- Offline ----------
+  // Reading: the last data received is kept on the phone, so the app opens without network.
+  // Writing: a versement entered without network is kept in a queue (operations, not rows: each one is added to the
+  // current server state when sent, so it cannot overwrite what other organizers wrote) and sent as soon as the network is back.
+  const isNetErr = e => navigator.onLine === false || /Failed to fetch|NetworkError|Load failed|fetch failed|network/i.test(String((e && e.message) || e));
+  const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  const cacheKey = (name, tid) => 'elongo.cache.' + (S.user ? S.user.id : '') + '.' + (tid || '') + '.' + name;
+  async function selectCached(name, tid, opts) {
+    if (B.mode === 'demo') return B.select(name, opts);   // the demo data already lives on the phone
+    if (navigator.onLine !== false) {
+      try { const rows = await B.select(name, opts); store.set(cacheKey(name, tid), JSON.stringify(rows)); ui.stale = false; return rows; }
+      catch (e) { if (!isNetErr(e)) throw e; }
+    }
+    const raw = store.get(cacheKey(name, tid)); ui.stale = true;
+    if (raw == null) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+  const qKey = () => 'elongo.queue.' + (S.user ? S.user.id : '');
+  function getQueue() { try { const v = JSON.parse(store.get(qKey())); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+  function setQueue(q) { store.set(qKey(), JSON.stringify(q)); chrome(); }
+  const pendingOps = () => getQueue().filter(o => o.tid === S.tid);
+  // Shows queued versements as if they were already recorded (marked `pending`) on top of the data received from the server.
+  function overlayPending() {
+    const c = S.cfg; if (!c) return;
+    pendingOps().forEach(op => {
+      const key = op.round + '_' + op.member_id, old = S.pay.get(key) || { tontine_id: op.tid, round: op.round, member_id: op.member_id, amount: 0, log: [], penalty_paid: false };
+      if ((old.log || []).some(x => x.id === op.id)) return;
+      const amount = Number(old.amount) + op.a;
+      S.pay.set(key, Object.assign({}, old, { amount, paid_on: op.at, done_on: amount >= c.amount ? op.at : old.done_on || null, log: (old.log || []).concat([{ a: op.a, at: op.at, m: op.m, by: op.by, ts: op.ts, id: op.id, pending: true }]) }));
+    });
+  }
+  // Writes one versement on the server, on top of the row as it is there now. Returns { add, total }, 'full' or 'done'.
+  async function commitVersement(op) {
+    const rows = await B.select('payments', { eq: { tontine_id: op.tid, round: op.round, member_id: op.member_id } });
+    const rec = rows[0] ? Object.assign({}, rows[0], { amount: Number(rows[0].amount) }) : null, log = (rec && rec.log) || [];
+    if (log.some(x => x.id === op.id)) return 'done';   // an earlier attempt already wrote it
+    const have = rec ? rec.amount : 0, add = Math.min(op.a, op.due - have);
+    if (add <= 0) return 'full';
+    const total = have + add;
+    await B.upsert('payments', { tontine_id: op.tid, round: op.round, member_id: op.member_id, amount: total, paid_on: op.at, done_on: total >= op.due ? op.at : null,
+      log: log.slice(-19).concat([{ a: add, at: op.at, m: op.m, by: op.by, ts: op.ts, id: op.id }]), penalty_paid: !!(rec && rec.penalty_paid) }, 'tontine_id,round,member_id');
+    notify({ kind: 'payment', tontine_id: op.tid, round: op.round, member_id: op.member_id });
+    return { add, total };
+  }
+  async function auditFor(tid, by, text) {
+    try { await B.insert('journal', { tontine_id: tid, by_name: String(by || 'Organisateur').slice(0, 60), text: String(text).slice(0, 300) }); } catch (e) { /* journal unavailable */ }
+  }
+  let syncing = false;
+  async function syncQueue() {
+    if (syncing || !S.user || navigator.onLine === false) return;
+    const q = getQueue(); if (!q.length) return;
+    syncing = true; let done = 0, dropped = 0;
+    try {
+      for (const op of q) {
+        try {
+          const r = await commitVersement(op);
+          if (r && r.add) { done++; await auditFor(op.tid, op.by, 'Versement de ' + plainMoney(r.add) + ' enregistré pour ' + op.name + ' (' + methodName(op.m) + '), tour ' + (op.round + 1) + (r.total >= op.due ? ', cotisation complète' : '') + ' (saisi hors connexion)'); }
+          setQueue(getQueue().filter(x => x.id !== op.id));
+        } catch (e) {
+          if (isNetErr(e)) break;
+          dropped++; setQueue(getQueue().filter(x => x.id !== op.id));
+        }
+      }
+    } finally { syncing = false; }
+    if (done || dropped) { try { await Promise.all([loadTable('payments'), loadTable('journal')]); } catch (e) { /* retried by the next refresh */ } render(); }
+    if (done) toast(done + ' versement' + (done > 1 ? 's' : '') + ' envoyé' + (done > 1 ? 's' : '') + ' au groupe.');
+    if (dropped) toast(dropped + ' versement' + (dropped > 1 ? 's' : '') + ' en attente ' + (dropped > 1 ? "n'ont" : "n'a") + ' pas pu être enregistré' + (dropped > 1 ? 's' : '') + ' : vérifiez vos droits ou la cotisation, puis recommencez.');
+  }
+
   // ---------- Data loading ----------
   const normT = t => Object.assign({}, t, { amount: Number(t.amount), penalty: Number(t.penalty) });
-  async function loadTontines() { S.tontines = (await B.select('tontines', { order: [['created_at', true]] })).map(normT); }
+  async function loadTontines() { const rows = await selectCached('tontines', '', { order: [['created_at', true]] }); if (rows) S.tontines = rows.map(normT); else throw { message: 'Pas de connexion à Internet. Réessayez.' }; }
   function pickTontine() {
     const want = store.get('lisanga.tid:' + (S.user ? S.user.id : ''));
     S.tid = (S.tontines.find(t => t.id === want) || S.tontines[0] || {}).id || null;
@@ -157,15 +226,15 @@
     const eq = { tontine_id: tid };
     if (name === 'tontines') { await loadTontines(); if (tid === S.tid) S.cfg = S.tontines.find(t => t.id === tid) || null; return; }
     if (name === 'contacts' && !isAdmin()) return;
-    if (name === 'journal') { try { S.journal = (await B.select('journal', { eq, order: [['created_at', false]], limit: 100 })).map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
-    const rows = await B.select(name, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
-    if (tid !== S.tid) return;
+    if (name === 'journal') { try { const jr = await selectCached('journal', tid, { eq, order: [['created_at', false]], limit: 100 }); if (jr) S.journal = jr.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
+    const rows = await selectCached(name, tid, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
+    if (tid !== S.tid || !rows) return;   // no network and nothing kept on this phone: leave what is shown
     if (name === 'members') { S.allMembers = rows; S.members = rows.filter(m => m.status === 'active'); S.pending = rows.filter(m => m.status === 'pending'); }
     else if (name === 'contacts') S.contacts = new Map(rows.map(r => [r.member_id, r.phone]));
     else if (name === 'payments') {
       const next = new Map(rows.map(r => [r.round + '_' + r.member_id, Object.assign({}, r, { amount: Number(r.amount) })]));
       if (S.loaded && !isAdmin()) next.forEach((v, k) => { const o = S.pay.get(k), n = nameOf(v.member_id); if (n && (!o || o.amount !== v.amount)) toast(v.amount >= S.cfg.amount ? n + ' a payé toute sa cotisation.' : n + ' a versé ' + money(v.amount) + ' sur ' + money(S.cfg.amount) + '.'); });
-      S.pay = next;
+      S.pay = next; overlayPending();
     } else if (name === 'payouts') {
       const next = new Map(rows.map(r => [r.round, Object.assign({}, r, { amount: Number(r.amount) })]));
       if (S.loaded && !isAdmin()) next.forEach((v, k) => { if (!S.out.has(k) && nameOf(v.member_id)) toast(nameOf(v.member_id) + ' a reçu la cagnotte.'); });
@@ -311,6 +380,9 @@
     const signed = !!S.user;
     $('topbar').hidden = !signed;
     $('demoBanner').hidden = B.mode !== 'demo';
+    const nq = S.user ? pendingOps().length : 0, off = navigator.onLine === false, ob = $('offlineBanner');
+    ob.hidden = !(S.user && (off || nq || ui.stale));
+    ob.innerHTML = (off ? '📴 <b>Hors connexion.</b> ' + (S.tid ? 'Les nouveaux versements sont gardés sur ce téléphone. ' : '') : ui.stale ? '📴 <b>Données de la dernière connexion.</b> ' : '') + (nq ? `⏳ ${nq} versement${nq > 1 ? 's' : ''} en attente d'envoi.` + (off ? '' : ' <button type="button" class="mini" data-act="syncnow">Envoyer maintenant</button>') : '');
     const tabs = signed && S.tid && TABS.includes(S.view);
     $('tabbar').hidden = !tabs;
     document.querySelectorAll('.tabbar a').forEach(a => { a.classList.toggle('on', a.dataset.tab === S.view); a.hidden = a.dataset.role === 'orga' && !isAdmin(); });
@@ -408,7 +480,7 @@
       + '<ul class="list">' + S.members.map((m, i) => {
         const paid = D.paidIds.has(m.id), rec = S.pay.get(D.cur + '_' + m.id), a = D.amt.get(m.id) || 0, rest = Math.max(0, c.amount - a), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
         return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${punctuality(m).streak >= 1 ? ` <span class="star" title="${punctuality(m).streak} tour${punctuality(m).streak > 1 ? 's' : ''} payé${punctuality(m).streak > 1 ? 's' : ''} à temps d'affilée">⭐${punctuality(m).streak > 1 ? punctuality(m).streak : ''}</span>` : ''}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
-          <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}</div>
+          <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}${rec && (rec.log || []).some(x => x.pending) ? ' <span class="pill wait">⏳ en attente d\'envoi</span>' : ''}</div>
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
           <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
       }).join('') + '</ul></section>';
@@ -425,7 +497,7 @@
   function payDialog(id) {
     const c = S.cfg, D = derive(), m = S.members.find(x => x.id === id); if (!c || !m || D.cur >= D.n) return;
     const rec = S.pay.get(D.cur + '_' + id), a = D.amt.get(id) || 0, rest = Math.max(0, c.amount - a), paid = D.paidIds.has(id), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + (() => { let run = 0; return rec.log.map(x => { run += Number(x.a); return Object.assign({ cum: run }, x); }); })().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}${x.by ? ' · par ' + esc(x.by) : ''}</div></div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(id)), receiptText(c, m.name, { a: Number(x.a), m: x.m || '', round: D.cur, at: x.at, by: x.by || '', cum: x.cum })))}">Reçu</a></li>`).join('') + '</ul>' : '';
+    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + (() => { let run = 0; return rec.log.map(x => { run += Number(x.a); return Object.assign({ cum: run }, x); }); })().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}${x.by ? ' · par ' + esc(x.by) : ''}${x.pending ? ' · <b>⏳ en attente d\'envoi</b>' : ''}</div></div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(id)), receiptText(c, m.name, { a: Number(x.a), m: x.m || '', round: D.cur, at: x.at, by: x.by || '', cum: x.cum })))}">Reçu</a></li>`).join('') + '</ul>' : '';
     const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}" style="margin-top:8px">Pénalité ${money(pen)}${settled ? ' réglée' : ''} <button class="mini" data-act="pen" data-id="${esc(id)}" aria-pressed="${settled}"${rec ? '' : ' disabled'}>${settled ? 'Annuler' : 'Marquer réglée'}</button></div>` : '';
     const ph = !paid ? waPhone(c, S.contacts.get(id)) : '';
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">Tour ${D.cur + 1} · cotisation de ${money(c.amount)}</p>
@@ -828,6 +900,7 @@
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
+      if (act === 'syncnow') { await syncQueue(); return; }
       if (act === 'journalmore') { ui.journalAll = !ui.journalAll; render(); return; }
       if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
       if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
@@ -901,15 +974,26 @@
         if (!METHODS[method]) { say("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
         store.set('lisanga.lastmethod', method);
         const add = Math.min(v, c.amount - have); if (add <= 0) { say('Cette cotisation est déjà complète.'); return; }
-        const total = have + add, today = todayISO();
-        await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today, m: method, by: chatName() || 'Organisateur', ts: new Date().toISOString() }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
-        notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
-        audit('Versement de ' + plainMoney(add) + ' enregistré pour ' + nameOf(id) + ' (' + methodName(method) + '), tour ' + (D.cur + 1) + (total >= c.amount ? ', cotisation complète' : ''));
+        const op = { id: newId(), tid: S.tid, round: D.cur, member_id: id, a: add, m: method, at: todayISO(), ts: new Date().toISOString(), by: chatName() || 'Organisateur', due: c.amount, name: nameOf(id) };
+        let res = null;
+        if (navigator.onLine !== false) { try { res = await commitVersement(op); } catch (e) { if (!isNetErr(e)) throw e; } }
+        if (res === 'full' || res === 'done') { say('Cette cotisation est déjà complète.'); await loadTable('payments'); return; }
+        if (!res) {   // no network: keep the versement on this phone, it is sent when the network is back
+          setQueue(getQueue().concat([op])); overlayPending();
+          delete ui.draft['v.' + id]; if ($('modal').open) $('modal').close(); render();
+          toast("Versement gardé sur ce téléphone : il partira dès que le réseau revient."); buzz(25); return;
+        }
+        const total = res.total;
+        audit('Versement de ' + plainMoney(res.add) + ' enregistré pour ' + nameOf(id) + ' (' + methodName(method) + '), tour ' + (D.cur + 1) + (total >= c.amount ? ', cotisation complète' : ''));
         delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close();
-        toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
+        toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(res.add) + ' enregistré, reste ' + money(c.amount - total) + '.');
         buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
       } else if (act === 'unvers') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id); if (!rec) return;
+        const lastE = (rec.log || [])[(rec.log || []).length - 1];
+        if (lastE && lastE.pending) {   // still on this phone: nothing was sent, just forget it
+          setQueue(getQueue().filter(x => x.id !== lastE.id)); await loadTable('payments'); if ($('modal').open) $('modal').close(); render(); toast('Versement en attente annulé.'); return;
+        }
         const log = (rec.log || []).slice(0, -1), lastAmt = (rec.log || []).length ? rec.log[rec.log.length - 1].a : rec.amount;
         audit('Dernier versement de ' + plainMoney(lastAmt) + ' annulé pour ' + nameOf(id) + ', tour ' + (D.cur + 1));
         if (!log.length) await B.remove('payments', eqPay(D.cur, id));
@@ -1059,10 +1143,10 @@
     else if (b.dataset.m === 'open') { S.tid = b.dataset.id; S.cfg = S.tontines.find(t => t.id === S.tid); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine(); go('#/tour'); }
   });
   window.addEventListener('hashchange', () => route());
-  window.addEventListener('offline', () => { $('liveDot').classList.add('off'); toast('Hors connexion : les données ne se mettent plus à jour.'); });
-  window.addEventListener('online', () => { $('liveDot').classList.remove('off'); if (S.tid) queue('*'); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tid && S.loaded) queue('*'); });
-  setInterval(() => { if (!document.hidden && S.tid && S.loaded && navigator.onLine !== false) queue('*'); }, 60000);
+  window.addEventListener('offline', () => { $('liveDot').classList.add('off'); chrome(); toast('Hors connexion : les données ne se mettent plus à jour.'); });
+  window.addEventListener('online', () => { $('liveDot').classList.remove('off'); chrome(); syncQueue().then(() => { if (S.tid) queue('*'); }); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncQueue(); if (S.tid && S.loaded) queue('*'); } });
+  setInterval(() => { if (!document.hidden && S.tid && S.loaded && navigator.onLine !== false) { syncQueue(); queue('*'); } }, 60000);
 
   // ---------- Unlock code ----------
   // Optional screen lock: each member can set a 4-6 digit code on this device. Only a salted hash is kept, in localStorage.
@@ -1142,6 +1226,7 @@
     B.onAuthChange(u => { if (!u || (isLocked() && (!S.user || u.id !== S.user.id))) hideLock(); S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
     await bootstrap();
+    syncQueue();   // versements kept on this phone from an earlier session
     window.__lisanga = { S, ui };   // handy for debugging in the console
   })();
 })();
