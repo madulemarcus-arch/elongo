@@ -418,6 +418,8 @@ step('frequency expressed in days');
 // ---------- Chat ----------
 await tab(Bp, 'discussion');
 await Bp.waitForSelector('#topicBar');
+await Bp.click('[data-act=newtopic]');
+await Bp.waitForSelector('#topicForm', { state: 'visible' });
 await Bp.fill('#topicIn', 'Retard de mars');
 await Bp.click('#topicForm button');
 await Bp.waitForSelector('#topicHead h3:has-text("Retard de mars")');
