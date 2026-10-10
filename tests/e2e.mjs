@@ -225,6 +225,23 @@ assert.ok(rcpt.includes('Total versé pour ce tour : 10 000 FC sur 10 000 FC (co
 await A.click('#modal [data-m=close]');
 step('WhatsApp reminders');
 
+// Manual reminder to the members who still owe (the server call is replaced here: demo mode has no server)
+await A.evaluate(() => { window.Backend.invoke = async (name, body) => { window.__remind = body; return { owing: 3, notified: 2, sent: 3, failed: 0, removed: 0, unreachable: ['Bob'] }; }; });
+await A.click('[data-act=remind]');
+await A.waitForSelector('[data-act=remind].armed:has-text("Confirmer")');
+await A.click('[data-act=remind]');
+await A.waitForSelector('#modal[open] h2:has-text("Rappel envoyé")');
+const rem = await A.textContent('#modalBody');
+assert.ok(rem.includes('2 membres prévenus') && rem.includes('À relancer autrement') && rem.includes('Bob'), 'reminder result: ' + rem);
+assert.deepEqual(await A.evaluate(() => window.__remind), { kind: 'remind', tontine_id: await A.evaluate(() => window.__lisanga.S.tid) }, 'the server is asked to remind this tontine');
+await shot(A, '11-rappel');
+await A.click('#modal [data-m=close]');
+await A.click('[data-act=remind]');
+await A.click('[data-act=remind]');
+await A.waitForSelector('.toast.show:has-text("moins de 3 heures")');
+assert.equal(await Bp.locator('[data-act=remind]').count(), 0, 'members have no reminder button');
+step('manual reminder button: confirmation, result, 3-hour limit');
+
 // Member view: no controls, no phones
 assert.equal(await Bp.locator('[data-act=vers]').count() + await Bp.locator('[data-act=manage]').count(), 0);
 await tab(Bp, 'tour');

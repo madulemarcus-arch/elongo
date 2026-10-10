@@ -23,7 +23,7 @@ const members = [
   { id: 'm2', tontine_id: 't1', name: 'Bob', user_id: BOB },
   { id: 'm3', tontine_id: 't1', name: 'Dora', user_id: null },   // no account: never notified
 ];
-const state = { payments: [], payouts: [], messages: [], topics: [{ id: 'tp1', title: 'Retard de mars' }], subs: [], sent: [], today: '2026-10-08', dead: new Set() };
+const state = { recent: false, payments: [], payouts: [], messages: [], topics: [{ id: 'tp1', title: 'Retard de mars' }], subs: [], sent: [], today: '2026-10-08', dead: new Set() };
 const sub = (user_id, endpoint) => ({ user_id, endpoint, p256dh: 'p', auth: 'a' });
 const reset = () => { Object.assign(state, { payments: [], payouts: [], messages: [], sent: [], today: '2026-10-08', dead: new Set(), subs: [sub(OWNER, 'e-owner'), sub(ALICE, 'e-alice'), sub(ALICE, 'e-alice-2'), sub(BOB, 'e-bob'), sub(OUTSIDER, 'e-out')] }); };
 const deps = () => ({
@@ -31,6 +31,7 @@ const deps = () => ({
   today: () => state.today,
   userIdFromToken: async tok => ({ 'tok-owner': OWNER, 'tok-alice': ALICE, 'tok-bob': BOB })[tok] || null,
   getTontine: async id => (id === 't1' ? T : null),
+  recentReminder: async () => state.recent,
   isOrganizer: async (t, uid) => t.owner_id === uid || uid === BOB,   // Bob is a co-organizer
   getMember: async id => members.find(m => m.id === id) || null,
   getPayment: async (t, r, m) => state.payments.find(p => p.round === r && p.member_id === m) || null,
@@ -137,6 +138,29 @@ state.today = '2026-10-15';
 await call({ kind: 'reminders' }, { cron: 's3cret' });
 assert.match(state.sent[0].body, /\(tour 2\)\.$/);
 step('reminders');
+
+// ---------- manual reminder by an organizer ----------
+reset(); state.today = '2026-10-05';   // well before the end of round 1: a manual reminder does not wait for the notice period
+state.payments.push({ round: 0, member_id: 'm0', amount: 10000 }, { round: 0, member_id: 'm1', amount: 4000 });
+assert.equal((await j(await call({ kind: 'remind', tontine_id: 't1' }))).status, 401, 'remind needs a signed-in user');
+assert.equal((await j(await call({ kind: 'remind', tontine_id: 't1' }, { token: 'tok-alice' }))).status, 403, 'a plain member cannot send reminders');
+r = await j(await call({ kind: 'remind', tontine_id: 't1' }, { token: 'tok-owner' }));
+assert.equal(r.status, 200);
+assert.deepEqual([r.owing, r.notified, r.failed], [3, 2, 0], 'Alice (partial), Bob (nothing) and Dora (no account) owe; two members reached');
+assert.deepEqual(r.unreachable, ['Dora'], 'the organizer learns who must be reminded another way');
+assert.deepEqual(to(), ['e-alice', 'e-alice-2', 'e-bob'], 'every device of the members who owe, nobody else');
+assert.equal(state.sent.find(s => s.endpoint === 'e-alice').body, 'Cotisation attendue dans 5 jours : 6 000 FC à verser (tour 1).');
+state.sent = []; state.recent = true;
+r = await j(await call({ kind: 'remind', tontine_id: 't1' }, { token: 'tok-owner' }));
+assert.equal(r.status, 429, 'at most one reminder every 3 hours');
+assert.equal(state.sent.length, 0);
+state.recent = false; state.sent = [];
+r = await j(await call({ kind: 'remind', tontine_id: 't1' }, { token: 'tok-bob' }));
+assert.equal(r.status, 200, 'a co-organizer can remind too');
+state.sent = []; state.payments = [0, 1, 2, 3].map(i => ({ round: 0, member_id: 'm' + i, amount: 10000 }));
+r = await j(await call({ kind: 'remind', tontine_id: 't1' }, { token: 'tok-owner' }));
+assert.deepEqual([r.owing, r.notified, state.sent.length], [0, 0, 0], 'everybody paid: nobody to remind');
+step('manual reminder');
 
 // ---------- dead subscriptions are removed ----------
 reset(); state.dead.add('e-alice-2'); state.dead.add('e-bob');
