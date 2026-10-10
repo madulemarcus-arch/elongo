@@ -43,6 +43,20 @@
   const lastMethod = () => { const v = store.get('lisanga.lastmethod'); return METHODS[v] ? v : ''; };
   const methodSelect = (id, sel) => `<select class="msel" data-d="m.${esc(id)}" aria-label="Moyen de paiement"><option value="">Moyen de paiement…</option>${METHOD_GROUPS.map(([label, keys]) => `<optgroup label="${esc(label)}">${keys.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(METHODS[k])}</option>`).join('')}</optgroup>`).join('')}</select>`;
 
+  // ----- life: vibration and confetti (both skipped when the phone asks for reduced motion) -----
+  const reduceMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const buzz = ms => { try { if (navigator.vibrate && !reduceMotion()) navigator.vibrate(ms); } catch (e) {} };
+  function celebrate() {
+    if (reduceMotion()) return;
+    const colors = ['#f4b73f', '#ffd982', '#9db2ff', '#5fcf93', '#f58c7c', '#ffffff'], box = document.createElement('div');
+    box.className = 'confetti-box'; box.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 44; i++) {
+      const c = document.createElement('i'); c.className = 'confetti';
+      c.style.cssText = `left:${Math.random() * 100}%;background:${colors[i % colors.length]};--x:${Math.round(Math.random() * 160 - 80)}px;--r:${Math.round(Math.random() * 720 - 360)}deg;--d:${(1.8 + Math.random() * 1.4).toFixed(2)}s;animation-delay:${(Math.random() * .4).toFixed(2)}s`;
+      box.appendChild(c);
+    }
+    document.body.appendChild(box); setTimeout(() => box.remove(), 3800);
+  }
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
   function friendly(e) {
     const m = String((e && e.message) || ''), c = e && e.code;
@@ -229,7 +243,7 @@
     if (soft === true && !changed && ['auth', 'welcome', 'join'].includes(view)) return;   // data changes do not concern these forms
     if (view === 'join' && (changed || !soft)) loadPreview(arg);
     render();
-    if (changed) window.scrollTo(0, 0);
+    if (changed) { window.scrollTo(0, 0); const v = $('view'); v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); clearTimeout(ui.enterT); ui.enterT = setTimeout(() => v.classList.remove('enter'), 900); }   // cards slide in when the screen changes, not on every live update
   }
   async function loadPreview(code) {
     S.preview = null;
@@ -252,6 +266,7 @@
     const html = ({ auth: viewAuth, welcome: viewWelcome, join: viewJoin, pending: viewPending, tour: () => viewTour(D), calendrier: () => viewCal(D), direct: () => viewLive(D), organisateur: () => viewAdmin(D) })[S.view];
     v.innerHTML = html ? html() : '';
     ui.rendered = S.view;
+    requestAnimationFrame(() => document.querySelectorAll('#view .bar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; ui.potPct = Number(i.dataset.w); }));   // the pot bar grows from its last value
     if (keep) {
       const x = [...v.querySelectorAll('input,textarea')].find(el => focusKey(el) === keep.k);
       if (x) { x.focus({ preventScroll: true }); if (x.value !== keep.value && x.type !== 'checkbox') x.value = keep.value; try { x.setSelectionRange(keep.s, keep.e); } catch (e) {} }
@@ -320,7 +335,7 @@
     const c = S.cfg;
     const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
       ? `<div class="remind"><b>Alertes sur ce téléphone</b><br>Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée.<div class="versrow"><button class="mini primary" data-act="pushon">Activer les notifications</button><button class="mini" data-act="pushlater">Plus tard</button></div></div>` : '';
-    const header = `<header><p class="eyebrow">Tontine</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
+    const hi = (chatName() || '').split(' ')[0], header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
       <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
     if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? undoBtn(D, '') : ''}</section>`;
@@ -342,7 +357,7 @@
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><p class="when" style="opacity:.75;font-size:.9rem">Tour de ${c.interval_days} jour${c.interval_days > 1 ? 's' : ''}, du ${esc(fmtShort(roundStart(c, D.cur)))} au ${esc(fmtShort(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
       <div class="pot"><div><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div></div>
-      <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+      <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}" style="width:${ui.potPct == null ? 0 : ui.potPct}%"></i></div>
       <div class="lbl num">${money(got)} encaissés sur ${money(pot)}, ${got < pot ? `il reste ${money(pot - got)} à encaisser` : 'cagnotte complète, prête à être remise'}</div></div>${mine}${remind}${act}</section>`;
     return header + hero + contribPanel(c, D);
   }
@@ -786,6 +801,7 @@
         notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
         delete ui.draft['v.' + id]; await loadTable('payments');
         toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
+        buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
       } else if (act === 'unvers') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id); if (!rec) return;
         const log = (rec.log || []).slice(0, -1);
@@ -797,6 +813,7 @@
         ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur, member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
         notify({ kind: 'payout', tontine_id: S.tid, round: D.cur });
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
+        buzz([30, 40, 60]); celebrate();
       } else if (act === 'undo') {
         if (D.cur < 1) return;
         if (ui.armed !== 'undo') { ui.armed = 'undo'; render(); return; }

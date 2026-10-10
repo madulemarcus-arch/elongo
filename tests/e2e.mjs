@@ -51,7 +51,7 @@ const step = name => console.log('✓', name);
 await ctx.grantPermissions(['microphone', 'notifications'], { origin: url.replace(/\/$/, '') });
 const A = await ctx.newPage(), Bp = await ctx.newPage();
 watch(A, 'orga'); watch(Bp, 'membre');
-const shot = async (p, name) => shots && p.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+const shot = async (p, name) => { if (!shots) return; await p.waitForTimeout(1000); await p.screenshot({ path: `${shots}/${name}.png`, fullPage: true }); };   // wait for the slide-in animation to finish
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const plusDays = (isoDate, n) => { const d = new Date(isoDate + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
@@ -334,10 +334,12 @@ await A.click('#modalBody [data-m=close]');
 const monthNow = (await A.textContent('.calhead h3')).trim();
 if (await A.isEnabled('[data-act=calprev]')) { await A.click('[data-act=calprev]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() !== m, monthNow); await A.click('[data-act=caltoday]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() === m, monthNow); }
 else assert.ok(await A.isDisabled('[data-act=calprev]'), 'no month before the first round');
-await shot(A, '05-calendrier');
 await Bp.waitForSelector('.toast.show:has-text("Marcus a reçu la cagnotte")');
+await shot(A, '05-calendrier');
+assert.ok(await A.locator('.confetti-box .confetti').count() > 10, 'confetti after the payout');
 // undo previous round, then redo it
 await tab(A, 'tour');
+await A.waitForSelector('.eyebrow:has-text("Bonjour Marcus")');
 await A.click('[data-act=undo]');
 await A.waitForSelector('[data-act=undo]:has-text("Confirmer")');
 await A.click('[data-act=undo]');
