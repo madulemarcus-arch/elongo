@@ -782,11 +782,14 @@
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, messages et rappels.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
+      ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
   });
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal')) $('modal').close(); return; }
+    if (b.dataset.m === 'pinform') { pinForm(); return; }
+    if (b.dataset.m === 'pinsave' || b.dataset.m === 'pindel') { await pinAction(b.dataset.m); return; }
     $('modal').close();
     if (b.dataset.m === 'out') { await disablePush(); await B.signOut(); }
     else if (b.dataset.m === 'pushon') { try { await enablePush(); } catch (e) { toast('Impossible d\'activer les notifications sur cet appareil.'); } }
@@ -800,11 +803,82 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tid && S.loaded) queue('*'); });
   setInterval(() => { if (!document.hidden && S.tid && S.loaded && navigator.onLine !== false) queue('*'); }, 60000);
 
+  // ---------- Unlock code ----------
+  // Optional screen lock: each member can set a 4-6 digit code on this device. Only a salted hash is kept, in localStorage.
+  const lockKey = uid => 'elongo.lock.' + uid;
+  const getLock = () => { if (!S.user) return null; try { const v = JSON.parse(store.get(lockKey(S.user.id))); return v && v.hash ? v : null; } catch (e) { return null; } };
+  async function hashPin(pin, salt) {
+    const txt = salt + ':' + pin;
+    try { const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(d)].map(b => pad(b.toString(16))).join(''); }
+    catch (e) { let h = 2166136261; for (const c of txt) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return 'f' + (h >>> 0).toString(16); }   // insecure context fallback
+  }
+  const newSalt = () => { try { return [...crypto.getRandomValues(new Uint8Array(8))].map(b => pad(b.toString(16))).join(''); } catch (e) { return String(Math.random()).slice(2); } };
+  async function setLock(pin) { const salt = newSalt(); store.set(lockKey(S.user.id), JSON.stringify({ salt, hash: await hashPin(pin, salt), len: pin.length })); }
+  const clearLock = () => { try { localStorage.removeItem(lockKey(S.user.id)); } catch (e) {} };
+  const lockState = { fails: 0, until: 0, hiddenAt: 0 };
+  function showLock() {
+    const l = getLock(); if (!l) return;
+    let el = $('lockScreen');
+    if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lockscreen'; document.body.appendChild(el); }
+    el.innerHTML = `<div class="lockbox"><img src="icons/icon-192.png" alt="" width="64" height="64"><h1>Elongo</h1><p class="sub">Entrez votre code pour continuer.</p>
+      <input id="lockIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="Code de déverrouillage">
+      <p class="lock-err" id="lockErr" role="alert"></p>
+      <button class="primary" id="lockGo">Déverrouiller</button><button class="mini" id="lockForgot">Code oublié ?</button></div>`;
+    el.hidden = false; document.body.classList.add('locked');
+    const inp = $('lockIn'); setTimeout(() => inp.focus(), 50);
+    const err = t => { $('lockErr').textContent = t; };
+    async function tryUnlock() {
+      const wait = Math.ceil((lockState.until - Date.now()) / 1000);
+      if (wait > 0) return err(`Trop d'essais. Réessayez dans ${wait} s.`);
+      const cur = getLock(); if (!cur) return hideLock();
+      if (await hashPin(inp.value, cur.salt) === cur.hash) { lockState.fails = 0; hideLock(); return; }
+      inp.value = '';
+      if (++lockState.fails >= 5) { lockState.fails = 0; lockState.until = Date.now() + 30000; err('Code incorrect 5 fois. Patientez 30 secondes.'); } else err('Code incorrect.');
+    }
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, ''); if (inp.value.length === l.len) tryUnlock(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+    $('lockGo').onclick = tryUnlock;
+    $('lockForgot').onclick = async () => {
+      if (!confirm('Pour retrouver l\'accès, vous allez être déconnecté puis vous reconnecter avec votre e-mail et votre mot de passe. Continuer ?')) return;
+      clearLock(); hideLock(); await disablePush(); await B.signOut();
+    };
+  }
+  function hideLock() { const el = $('lockScreen'); if (el) { el.hidden = true; el.innerHTML = ''; } document.body.classList.remove('locked'); }
+  const isLocked = () => document.body.classList.contains('locked');
+  function lockSection() {
+    const has = !!getLock();
+    return `<h3 style="margin-top:12px">Code de déverrouillage</h3>
+      <p class="hint">${has ? 'Activé sur cet appareil : le code est demandé à l\'ouverture et après une absence.' : 'Protégez l\'appli sur cet appareil avec un code de 4 à 6 chiffres que vous choisissez.'}</p>
+      <p><button class="mini ${has ? '' : 'primary'}" data-m="pinform">${has ? 'Changer ou supprimer le code' : 'Définir un code'}</button></p>`;
+  }
+  function pinForm() {
+    const has = !!getLock(), f = (id, label) => `<label class="f">${label}<input id="${id}" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>`;
+    $('modalBody').innerHTML = `<h2>Code de déverrouillage</h2><p class="sub">4 à 6 chiffres, uniquement sur cet appareil.</p>
+      ${has ? f('pinOld', 'Code actuel') : ''}${f('pinNew', has ? 'Nouveau code' : 'Code')}${f('pinNew2', 'Confirmer le code')}
+      <p class="lock-err" id="pinErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" data-m="pinsave">Enregistrer</button>${has ? '<button class="danger" data-m="pindel">Supprimer le code</button>' : ''}<button data-m="close">Annuler</button></div>`;
+  }
+  async function pinAction(kind) {
+    const err = t => { $('pinErr').textContent = t; };
+    const cur = getLock(), val = id => ($(id) ? $(id).value : '');
+    if (cur && await hashPin(val('pinOld'), cur.salt) !== cur.hash) return err('Le code actuel est incorrect.');
+    if (kind === 'pindel') { clearLock(); $('modal').close(); toast('Code supprimé.'); return; }
+    const a = val('pinNew');
+    if (!/^\d{4,6}$/.test(a)) return err('Le code doit avoir 4 à 6 chiffres.');
+    if (a !== val('pinNew2')) return err('Les deux codes ne sont pas identiques.');
+    await setLock(a); $('modal').close(); toast('Code enregistré.');
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) lockState.hiddenAt = Date.now();
+    else if (lockState.hiddenAt && Date.now() - lockState.hiddenAt > 60000 && getLock() && !isLocked()) { if ($('modal').open) $('modal').close(); showLock(); }
+  });
+
   // ---------- Boot ----------
   (async () => {
     try { await B.init(); } catch (e) { toast(friendly(e)); }
     S.user = B.user;
-    B.onAuthChange(u => { S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
+    if (S.user && getLock()) showLock();
+    B.onAuthChange(u => { if (!u || (isLocked() && (!S.user || u.id !== S.user.id))) hideLock(); S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
     await bootstrap();
     window.__lisanga = { S, ui };   // handy for debugging in the console

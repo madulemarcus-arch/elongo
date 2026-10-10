@@ -231,6 +231,33 @@ await Bp.click('[data-m=pushon]');
 await Bp.waitForFunction(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length === 1);
 step('push notifications: banner, subscribe, unsubscribe, later');
 
+// ---------- Unlock code ----------
+await Bp.click('#userChip');
+await Bp.click('[data-m=pinform]');
+await Bp.fill('#pinNew', '12'); await Bp.fill('#pinNew2', '12'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForSelector('#pinErr:has-text("4 à 6 chiffres")');
+await Bp.fill('#pinNew', '4821'); await Bp.fill('#pinNew2', '4822'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForSelector('#pinErr:has-text("pas identiques")');
+await Bp.fill('#pinNew2', '4821'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+assert.ok(!(await Bp.evaluate(() => JSON.stringify(localStorage))).includes('4821'), 'the code itself is never stored');
+await Bp.reload();
+await Bp.waitForSelector('#lockIn');
+await Bp.fill('#lockIn', '0000'); await Bp.click('#lockGo');
+await Bp.waitForSelector('#lockErr:has-text("incorrect")');
+await Bp.fill('#lockIn', '4821');   // the last digit unlocks by itself
+await Bp.waitForSelector('#lockScreen', { state: 'hidden' });
+await Bp.click('#userChip');
+await Bp.click('[data-m=pinform]');
+await Bp.fill('#pinOld', '9999'); await Bp.click('[data-m=pindel]');
+await Bp.waitForSelector('#pinErr:has-text("actuel est incorrect")');
+await Bp.fill('#pinOld', '4821'); await Bp.click('[data-m=pindel]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+await Bp.reload();
+await Bp.waitForSelector('#userChip');
+assert.equal(await Bp.locator('#lockIn').count(), 0, 'no lock once the code is removed');
+step('unlock code: set, lock on open, wrong code, unlock, remove');
+
 // ---------- Payout, calendar ----------
 await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
 await A.waitForSelector('li:has-text("Marcus") .pill.ok');

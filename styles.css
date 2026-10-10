@@ -185,3 +185,14 @@ dialog h2 { margin-bottom: 10px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .invite-code { color: #2a2000; } }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } .dot, .live-dot, .rec { animation: none; } }
 @media print { .topbar, .tabbar, .toast { display: none; } }
+
+/* Unlock code */
+.lockscreen { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: linear-gradient(160deg, var(--hero-a), var(--hero-b)); color: #fff; }
+.lockscreen[hidden] { display: none; }
+.lockbox { width: 100%; max-width: 320px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.lockbox .sub { color: rgba(255,255,255,.8); margin: 0; }
+.lockbox input { width: 100%; text-align: center; font-size: 1.8rem; letter-spacing: .5em; padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.12); color: #fff; }
+.lockbox button { width: 100%; }
+.lock-err { color: #ffb4a8; min-height: 1.2em; margin: 0; font-size: .9rem; }
+dialog .lock-err { color: #b3261e; }
+body.locked > *:not(#lockScreen) { visibility: hidden; }
