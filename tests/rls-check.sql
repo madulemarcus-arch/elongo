@@ -18,7 +18,7 @@ declare n int; begin execute stmt into n; if n <> 0 then raise exception 'ECHEC:
 
 -- organizer creates the tontine
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
-insert into tontines (name, amount, start_date) values ('Tontine test', 10000, '2026-01-01');
+insert into tontines (name, amount, start_date) values ('Tontine test', 10000, '2026-01-01') returning id;
 select pg_temp.check('owner_id vient de auth.uid()', (select owner_id from tontines) = '00000000-0000-0000-0000-00000000000a');
 select pg_temp.fails('créer une tontine au nom d''un autre',
   $$insert into tontines (owner_id, name, amount, start_date) values ('00000000-0000-0000-0000-00000000000b', 'x', 1, '2026-01-01')$$);
@@ -29,7 +29,7 @@ select set_config('app.code', (select code from tontines), false) as code \gset
 
 -- manual member + a linked member row for user b (as accepted request would give)
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
-insert into members (tontine_id, name, position) values (current_setting('app.t')::uuid, 'Alice', 1);
+insert into members (tontine_id, name, position) values (current_setting('app.t')::uuid, 'Alice', 1) returning id;
 select pg_temp.check('aperçu par code (organisateur)', (select count(*) from tontine_preview(current_setting('app.code'))) = 1);
 
 -- b joins by code -> pending, invisible chat, own request visible
@@ -58,9 +58,9 @@ select pg_temp.zero('membre actif ne lit pas les téléphones', $$select count(*
 select pg_temp.zero('membre ne modifie pas les réglages', $$with u as (update tontines set amount = 1 returning 1) select count(*)::int from u$$);
 select pg_temp.fails('membre ne verse pas', format('insert into payments (tontine_id, round, member_id, amount, paid_on) select %L, 0, id, 5, current_date from members limit 1', current_setting('app.t')));
 select pg_temp.fails('membre ne remet pas la cagnotte', format('insert into payouts (tontine_id, round, member_id, amount, paid_on) select %L, 0, id, 5, current_date from members limit 1', current_setting('app.t')));
-insert into topics (tontine_id, title, author_name) values (current_setting('app.t')::uuid, 'Retard de mars', 'Bob');
+insert into topics (tontine_id, title, author_name) values (current_setting('app.t')::uuid, 'Retard de mars', 'Bob') returning id;
 select pg_temp.fails('titre de sujet en double (casse)', format('insert into topics (tontine_id, title, author_name) values (%L, ''retard de MARS'', ''Bob'')', current_setting('app.t')));
-insert into messages (tontine_id, topic_id, author_name, body) select tontine_id, id, 'Bob', 'Bonjour' from topics;
+insert into messages (tontine_id, topic_id, author_name, body) select tontine_id, id, 'Bob', 'Bonjour' from topics returning id;
 insert into messages (tontine_id, author_name, body, att) values (current_setting('app.t')::uuid, 'Bob', '', '{"path":"x","kind":"image"}');
 select pg_temp.fails('message vide', format('insert into messages (tontine_id, author_name, body) values (%L, ''Bob'', '''')', current_setting('app.t')));
 select pg_temp.fails('message signé d''un autre', format('insert into messages (tontine_id, author_id, author_name, body) values (%L, %L, ''Alice'', ''x'')', current_setting('app.t'), '00000000-0000-0000-0000-00000000000a'));
@@ -68,9 +68,9 @@ select pg_temp.fails('message signé d''un autre', format('insert into messages 
 -- organizer payments / payouts / moderation
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 insert into payments (tontine_id, round, member_id, amount, paid_on, log)
-  select tontine_id, 0, id, 4000, current_date, '[{"a":4000,"at":"2026-01-01"}]' from members where name = 'Alice';
+  select tontine_id, 0, id, 4000, current_date, '[{"a":4000,"at":"2026-01-01"}]' from members where name = 'Alice' returning round;
 update payments set amount = 10000, done_on = current_date;
-insert into payouts (tontine_id, round, member_id, amount, paid_on) select tontine_id, 0, id, 20000, current_date from members where name = 'Alice';
+insert into payouts (tontine_id, round, member_id, amount, paid_on) select tontine_id, 0, id, 20000, current_date from members where name = 'Alice' returning round;
 select pg_temp.fails('même tour payé deux fois', format('insert into payouts (tontine_id, round, member_id, amount, paid_on) select %L, 0, id, 1, current_date from members limit 1', current_setting('app.t')));
 select pg_temp.check('organisateur modère le chat', (select count(*) from messages) = 2);
 delete from messages where body = 'Bonjour';

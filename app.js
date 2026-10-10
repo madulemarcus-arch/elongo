@@ -619,7 +619,7 @@
       } else if (f.id === 'createForm') {
         const v = fv(f), cfg = { name: v['c.name'].trim(), amount: Number(v['c.amount']), currency: (v['c.cur'] || 'FC').trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(v['c.days'])) || 30)), start_date: v['c.start'] || todayISO(), penalty: 0, reminder_days: 3, country_code: '243', join_open: true };
         const me = (v['c.me'] || '').trim();
-        if (!cfg.name || !(cfg.amount > 0) || !me) return;
+        if (!cfg.name || !(cfg.amount > 0) || !me) { toast('Remplissez le nom du groupe, la cotisation et votre nom.'); return; }
         const [t] = await B.insert('tontines', cfg);
         if (v['c.part']) await B.insert('members', { tontine_id: t.id, user_id: S.user.id, name: me.slice(0, 40), position: 1, status: 'active' });
         clearDraft('c.'); await pickAfterJoin(t.id); toast('Tontine créée. Invitez maintenant les membres.');
