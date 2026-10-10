@@ -9,6 +9,8 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 - **Membres et ordre de passage** : ajout à la main, montée/descente, retrait ; les membres déjà servis sont verrouillés.
 - **Inscription avec validation** : lien ou code d'invitation (onglet Organisateur) ; la personne crée son compte, demande à rejoindre, l'organisateur accepte (le membre est ajouté en fin d'ordre) ou refuse. Le téléphone n'est lisible que par l'organisateur.
 - **Cotisations par versements partiels**, annulation du dernier versement, **pénalités de retard** (à marquer réglées).
+- **Moyen de paiement** obligatoire à chaque versement (M-Pesa, Orange Money, Airtel Money, Illico Cash, cash à l'organisateur ou au caissier).
+- **Fiche d'un membre** : un clic sur son nom affiche le nombre de versements, le total versé, le total par moyen de paiement et le détail.
 - **Rappels** : bandeau pour le membre, texte de rappel au groupe et relance individuelle par **lien WhatsApp**.
 - **Calendrier des tours**, **tableau d'évolution en direct** (✓, pourcentages, ✗) et fil des dernières nouvelles.
 - **Remise de la cagnotte** calculée automatiquement (somme encaissée), annulable.
