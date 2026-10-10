@@ -15,7 +15,20 @@
   const fmtSize = b => b < 1e3 ? b + ' o' : b < 1e6 ? Math.round(b / 1e3) + ' Ko' : (b / 1e6).toFixed(1).replace('.', ',') + ' Mo';
   const num = n => new Intl.NumberFormat('fr-FR').format(n);
   const money = n => num(n) + ' ' + esc(S.cfg ? S.cfg.currency : '');
-  const roundDate = (c, r) => { const d = parse(c.start_date); d.setUTCDate(d.getUTCDate() + r * c.interval_days); return toISO(d); };
+  // A round lasts interval_days days: from start_date + round × days to that date + days (5 days from the 10th: 10th to 15th).
+  // The next round starts on the day this one ends.
+  // The end of the round is its deadline: contributions are due and the pot is handed over by then.
+  const plusDays = (iso, n) => { const d = parse(iso); d.setUTCDate(d.getUTCDate() + n); return toISO(d); };
+  const roundStart = (c, r) => plusDays(c.start_date, r * c.interval_days);
+  const roundEnd = (c, r) => plusDays(c.start_date, (r + 1) * c.interval_days);
+  const roundDate = roundEnd;
+  function tourPreview(start, days, n) {
+    days = Math.round(Number(days));
+    if (!start || !(days >= 1)) return "Indiquez le début du premier tour et sa durée en jours : la date de fin s'affiche ici.";
+    const cfg = { start_date: start, interval_days: Math.min(365, days) };
+    return `Chaque tour dure ${cfg.interval_days} jour${cfg.interval_days > 1 ? 's' : ''}. Tour 1 : du ${fmtShort(roundStart(cfg, 0))} au ${fmtShort(roundEnd(cfg, 0))}, la cagnotte est remise à la fin du tour.`
+      + (n > 1 ? ` Dernier tour (${n}) : jusqu'au ${fmtShort(roundEnd(cfg, n - 1))}.` : '');
+  }
   const rel = iso => { const d = dayDiff(iso, todayISO()); return d === 0 ? "aujourd'hui" : d === 1 ? 'demain' : d === -1 ? 'hier' : d > 0 ? 'dans ' + d + ' jours' : 'il y a ' + (-d) + ' jours'; };
   const freqText = c => c.interval_days === 1 ? 'chaque jour' : c.interval_days === 7 ? 'chaque semaine' : 'tous les ' + c.interval_days + ' jours';
   const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
@@ -182,7 +195,7 @@
   function reminderText(c, D) {
     const due = roundDate(c, D.cur), fmt = n => num(n) + ' ' + c.currency;
     const miss = S.members.filter(m => !D.paidIds.has(m.id)).map(m => { const a = D.amt.get(m.id) || 0; return a > 0 ? `${m.name} (reste ${fmt(c.amount - a)})` : m.name; });
-    return `Rappel tontine « ${c.name} », tour ${D.cur + 1}/${D.n}\nBénéficiaire : ${D.benef.name}\nDate : ${fmtDate(due)}\nCotisation : ${fmt(c.amount)}`
+    return `Rappel tontine « ${c.name} », tour ${D.cur + 1}/${D.n}\nBénéficiaire : ${D.benef.name}\nFin du tour : ${fmtDate(due)}\nCotisation : ${fmt(c.amount)}`
       + (c.penalty ? `\nPénalité de retard : ${fmt(c.penalty)}` : '') + (miss.length ? `\nReste à payer : ${miss.join(', ')}` : '\nTout le monde a payé, merci !');
   }
   const inviteLink = () => location.origin + location.pathname + '#/rejoindre/' + S.cfg.code;
@@ -261,8 +274,9 @@
       <label class="f">Nom du groupe<input data-d="c.name" value="${esc(dv('c.name', ''))}" required maxlength="60" placeholder="Ex. Tontine des amis"></label>
       <label class="f">Cotisation par membre<input data-d="c.amount" value="${esc(dv('c.amount', ''))}" type="number" min="1" step="any" required placeholder="10000"></label>
       <label class="f">Monnaie<input data-d="c.cur" value="${esc(dv('c.cur', 'FC'))}" maxlength="8" required></label>
-      <label class="f">Un tour tous les (jours)<input data-d="c.days" value="${esc(dv('c.days', 30))}" type="number" min="1" max="365" step="1" required></label>
-      <label class="f">Date du premier tour<input data-d="c.start" value="${esc(dv('c.start', todayISO()))}" type="date" required></label>
+      <label class="f">Durée d'un tour (jours)<input data-d="c.days" value="${esc(dv('c.days', 30))}" type="number" min="1" max="365" step="1" required></label>
+      <label class="f">Début du premier tour<input data-d="c.start" value="${esc(dv('c.start', todayISO()))}" type="date" required></label>
+      <p class="hint" id="prev-c" style="grid-column:1/-1">${esc(tourPreview(dv('c.start', todayISO()), dv('c.days', 30), 0))}</p>
       <label class="f">Votre nom<input data-d="c.me" value="${esc(dv('c.me', ''))}" required maxlength="40" placeholder="Votre nom dans le groupe"></label>
       <div class="f">Participation<label class="inl"><input type="checkbox" data-d="c.part" ${dv('c.part', true) ? 'checked' : ''}> Je participe aux tours</label></div>
       <button class="primary" type="submit">Créer la tontine</button></form></section>`;
@@ -305,8 +319,8 @@
     let mine = '', remind = '';
     if (mi >= 0) {
       mine = mi < D.cur ? `<div class="mine">Vous avez déjà reçu votre part (tour ${mi + 1}).</div>`
-        : mi === D.cur ? `<div class="mine"><b>C'est votre tour.</b> Cagnotte de ${money(pot)} prévue le ${esc(fmtDate(due))}.</div>`
-        : `<div class="mine">Votre tour : <b>${esc(fmtDate(roundDate(c, mi)))}</b> (${esc(rel(roundDate(c, mi)))}), tour ${mi + 1} sur ${D.n}.</div>`;
+        : mi === D.cur ? `<div class="mine"><b>C'est votre tour.</b> Cagnotte de ${money(pot)} à remettre le ${esc(fmtDate(due))}.</div>`
+        : `<div class="mine">Votre tour : du ${esc(fmtShort(roundStart(c, mi)))} au <b>${esc(fmtDate(roundEnd(c, mi)))}</b> (${esc(rel(roundEnd(c, mi)))}), tour ${mi + 1} sur ${D.n}.</div>`;
       if (!D.paidIds.has(me.id)) {
         const dd = dayDiff(due, todayISO()), pen = penOf(c, D, me), rest = c.amount - (D.amt.get(me.id) || 0);
         if (dd < 0) remind = `<div class="remind late"><b>Cotisation en retard.</b> Versez ${money(rest)} dès que possible${pen ? `. Pénalité : ${money(pen)}` : ''}.</div>`;
@@ -316,7 +330,7 @@
     const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
       + (D.cur > 0 ? '<button class="ghost" data-act="undo">Annuler le tour précédent</button>' : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
-      <p class="when">${esc(fmtDate(due))} · ${esc(rel(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
+      <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><p class="when" style="opacity:.75;font-size:.9rem">Tour de ${c.interval_days} jour${c.interval_days > 1 ? 's' : ''}, du ${esc(fmtShort(roundStart(c, D.cur)))} au ${esc(fmtShort(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
       <div class="pot"><div><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div></div>
       <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
       <div class="lbl num">${money(got)} encaissés sur ${money(pot)}, ${got < pot ? `il reste ${money(pot - got)} à encaisser` : 'cagnotte complète, prête à être remise'}</div></div>${mine}${remind}${act}</section>`;
@@ -347,9 +361,9 @@
     const c = S.cfg, me = myRow();
     if (!D.n) return '<section class="panel"><h2>Calendrier des tours</h2><p class="empty">Le calendrier apparaîtra quand les membres seront ajoutés.</p></section>';
     return '<section class="panel"><h2>Calendrier des tours</h2><ul class="list">' + S.members.map((m, r) => {
-      const date = roundDate(c, r), ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
+      const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${esc(m.name)}</div><div class="sub">${esc(fmtShort(date))} · ${money(amtv)}</div></div>${pill}</li>`;
+      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${esc(m.name)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}</li>`;
     }).join('') + '</ul></section>';
   }
 
@@ -389,8 +403,9 @@
       <label class="f">Nom du groupe<input data-d="s.name" value="${esc(dv('s.name', c.name))}" required maxlength="60"></label>
       <label class="f">Cotisation par membre<input data-d="s.amount" value="${esc(dv('s.amount', c.amount))}" type="number" min="1" step="any" required></label>
       <label class="f">Monnaie<input data-d="s.cur" value="${esc(dv('s.cur', c.currency))}" maxlength="8" required></label>
-      <label class="f">Un tour tous les (jours)<input data-d="s.days" value="${esc(dv('s.days', c.interval_days))}" type="number" min="1" max="365" step="1" required list="dayChoices"><datalist id="dayChoices"><option value="7"><option value="14"><option value="15"><option value="30"></datalist></label>
-      <label class="f">Date du premier tour<input data-d="s.start" value="${esc(dv('s.start', c.start_date))}" type="date" required></label>
+      <label class="f">Durée d'un tour (jours)<input data-d="s.days" value="${esc(dv('s.days', c.interval_days))}" type="number" min="1" max="365" step="1" required list="dayChoices"><datalist id="dayChoices"><option value="7"><option value="14"><option value="15"><option value="30"></datalist></label>
+      <label class="f">Début du premier tour<input data-d="s.start" value="${esc(dv('s.start', c.start_date))}" type="date" required></label>
+      <p class="hint" id="prev-s" style="grid-column:1/-1">${esc(tourPreview(dv('s.start', c.start_date), dv('s.days', c.interval_days), S.members.length))}</p>
       <label class="f">Pénalité de retard (0 = aucune)<input data-d="s.pen" value="${esc(dv('s.pen', c.penalty))}" type="number" min="0" step="any"></label>
       <label class="f">Rappel (jours avant la date)<input data-d="s.rem" value="${esc(dv('s.rem', c.reminder_days))}" type="number" min="0" max="30" step="1"></label>
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
@@ -544,11 +559,11 @@
       S.members.forEach(m => { const r = S.pay.get(D.cur + '_' + m.id), p = penOf(c, D, m); if (p) { due += p; if (r && r.penalty_paid) settled += p; } });
       section(`Cagnotte du tour ${D.cur + 1} - ${D.benef.name}`, { head: [['Élément', 'Montant']], body: [
         ['Cagnotte attendue', m$(pot)], ['Déjà encaissé (' + D.paidIds.size + ' cotisations complètes sur ' + D.n + ')', m$(got)], ['Reste à encaisser', m$(pot - got)],
-        ['Date du tour', fmtDate(roundDate(c, D.cur))], ...(c.penalty ? [['Pénalités dues', m$(due)], ['Pénalités réglées', m$(settled)]] : [])] });
+        ['Fin du tour', fmtDate(roundEnd(c, D.cur))], ...(c.penalty ? [['Pénalités dues', m$(due)], ['Pénalités réglées', m$(settled)]] : [])] });
     }
-    section('Calendrier des tours', { head: [['Tour', 'Date', 'Bénéficiaire', 'Cagnotte', 'Statut']], body: S.members.map((m, r) => {
+    section('Calendrier des tours', { head: [['Tour', 'Début', 'Fin', 'Bénéficiaire', 'Cagnotte', 'Statut']], body: S.members.map((m, r) => {
       const ov = S.out.get(r);
-      return [r + 1, fmtShort(roundDate(c, r)), m.name, m$(ov ? ov.amount : c.amount * D.n), ov ? 'Reçu le ' + fmtShort(ov.paid_on) : r === D.cur ? 'En cours' : 'À venir'];
+      return [r + 1, fmtShort(roundStart(c, r)), fmtShort(roundEnd(c, r)), m.name, m$(ov ? ov.amount : c.amount * D.n), ov ? 'Reçu le ' + fmtShort(ov.paid_on) : r === D.cur ? 'En cours' : 'À venir'];
     }) });
     if (open) section(`Cotisations du tour ${D.cur + 1}`, { head: [['Membre', 'Versé', 'Reste', 'Statut', 'Dernier versement', 'Pénalité']], body: S.members.map(m => {
       const r = S.pay.get(D.cur + '_' + m.id), p = penOf(c, D, m), a = D.amt.get(m.id) || 0;
@@ -711,6 +726,8 @@
   document.addEventListener('input', ev => {
     const i = ev.target; if (!i || !i.dataset || !i.dataset.d) return;
     ui.draft[i.dataset.d] = i.type === 'checkbox' ? i.checked : i.value;
+    const m = /^([cs])\.(days|start)$/.exec(i.dataset.d), out = m && $('prev-' + m[1]);
+    if (out) out.textContent = tourPreview(document.querySelector(`[data-d="${m[1]}.start"]`).value, document.querySelector(`[data-d="${m[1]}.days"]`).value, m[1] === 's' ? S.members.length : 0);
   });
   document.addEventListener('change', async ev => {
     const i = ev.target;

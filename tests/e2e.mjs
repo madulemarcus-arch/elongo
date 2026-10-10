@@ -53,6 +53,7 @@ const A = await ctx.newPage(), Bp = await ctx.newPage();
 watch(A, 'orga'); watch(Bp, 'membre');
 const shot = async (p, name) => shots && p.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const plusDays = (isoDate, n) => { const d = new Date(isoDate + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
 const d$ = (key) => `[data-d="${key}"]`;
 const text = async p => (await p.textContent('main')).replace(/\s+/g, ' ');
@@ -70,7 +71,14 @@ await A.waitForSelector('#createForm');
 await A.fill(d$('c.name'), 'Tontine des amis');
 await A.fill(d$('c.amount'), '10000');
 await A.fill(d$('c.days'), '7');
-await A.fill(d$('c.start'), daysAgo(2)); // first round was due 2 days ago: contributions are late
+await A.fill(d$('c.start'), daysAgo(9)); // first round: 9 days ago to 2 days ago (7-day rounds): it ended 2 days ago, contributions are late
+// the end date of a round is computed and shown as soon as the duration and the start are typed
+const short = iso => new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso + 'T00:00:00Z'));
+const preview = await A.textContent('#prev-c');
+assert.ok(preview.includes('Chaque tour dure 7 jours') && preview.includes(`du ${short(daysAgo(9))} au ${short(daysAgo(2))}`), 'live preview of the end of the round: ' + preview);
+await A.fill(d$('c.days'), '30');
+assert.ok((await A.textContent('#prev-c')).includes(`au ${short(plusDays(daysAgo(9), 30))}`), 'the end date follows the number of days');
+await A.fill(d$('c.days'), '7');
 await A.fill(d$('c.me'), 'Marcus');
 await shot(A, '02-creation');
 await A.click('#createForm button.primary');
@@ -263,6 +271,7 @@ step('live board');
 // ---------- Settings change: interval in days ----------
 await tab(A, 'organisateur');
 await A.fill(d$('s.days'), '14');
+assert.ok((await A.textContent('#prev-s')).includes('Chaque tour dure 14 jours') && (await A.textContent('#prev-s')).includes('Dernier tour (4)'), 'settings preview');
 await A.click('#cfgForm button.primary');
 await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
 await tab(A, 'tour');
