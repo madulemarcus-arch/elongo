@@ -258,6 +258,24 @@ await Bp.waitForSelector('#userChip');
 assert.equal(await Bp.locator('#lockIn').count(), 0, 'no lock once the code is removed');
 step('unlock code: set, lock on open, wrong code, unlock, remove');
 
+// ---------- Co-organizer ----------
+await A.click('.tabbar a[data-tab=organisateur]');
+assert.equal(await Bp.isVisible('.tabbar a[data-tab=organisateur]'), false, 'a plain member has no organizer tab');
+await A.click('li:has-text("Chantal") [data-act=orga]');
+await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
+await A.waitForSelector('li:has-text("Chantal") .pill:has-text("Organisateur")');
+await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'visible' });
+await Bp.click('.tabbar a[data-tab=organisateur]');
+await Bp.waitForSelector('h2:has-text("Espace organisateur")');
+assert.equal(await Bp.locator('[data-act=orga]').count(), 0, 'only the creator names organizers');
+assert.equal(await A.locator('li:has-text("Alice") [data-act=orga]').count(), 0, 'a member without account cannot be named');
+await A.click('li:has-text("Chantal") [data-act=orga]');
+await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
+await A.waitForSelector('li:has-text("Chantal") .pill:has-text("Organisateur")', { state: 'detached' });
+await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'hidden' });
+await A.click('.tabbar a[data-tab=tour]'); await Bp.click('.tabbar a[data-tab=tour]');
+step('co-organizer: named by the creator, gets the organizer space, can be removed');
+
 // ---------- Payout, calendar ----------
 await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
 await A.waitForSelector('li:has-text("Marcus") .pill.ok');

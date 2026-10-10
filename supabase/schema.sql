@@ -2,7 +2,8 @@
 -- À coller en entier dans Supabase > SQL Editor, puis « Run ». Le script peut être relancé sans danger.
 --
 -- Rôles :
---   organisateur = tontines.owner_id : réglages, membres, versements, remises, inscriptions ;
+--   créateur     = tontines.owner_id : tout, y compris nommer ou retirer des co-organisateurs, supprimer la tontine ;
+--   organisateur = créateur ou membre actif marqué members.is_organizer : réglages, membres, versements, remises, inscriptions ;
 --   membre actif = ligne members.status = 'active' avec son user_id : lit tout, écrit dans la discussion ;
 --   demandeur    = ligne members.status = 'pending' : ne voit que sa demande et le nom de la tontine.
 -- Le numéro de téléphone (table contacts) n'est lisible que par l'organisateur.
@@ -34,6 +35,7 @@ create table if not exists public.members (
   created_at  timestamptz not null default now(),
   unique (tontine_id, user_id)
 );
+alter table public.members add column if not exists is_organizer boolean not null default false;
 create index if not exists members_tontine_idx on public.members (tontine_id, position);
 
 create table if not exists public.contacts (
@@ -103,9 +105,17 @@ create table if not exists public.push_subscriptions (
 );
 
 -- ---------- Fonctions d'appartenance (security definer : évitent la récursion des politiques) ----------
-create or replace function public.is_owner(t uuid) returns boolean
+-- Créateur de la tontine.
+create or replace function public.is_creator(t uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.tontines where id = t and owner_id = auth.uid())
+$$;
+
+-- Organisateur : le créateur ou un membre actif nommé organisateur par lui.
+create or replace function public.is_owner(t uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_creator(t) or exists (
+    select 1 from public.members where tontine_id = t and user_id = auth.uid() and status = 'active' and is_organizer)
 $$;
 
 -- Organisateur ou membre actif.
@@ -153,7 +163,7 @@ end $$;
 -- et une fonction qui interroge la table ne la voit pas encore.
 create policy tontines_select on public.tontines for select to authenticated using (owner_id = auth.uid() or public.is_in(id));
 create policy tontines_insert on public.tontines for insert to authenticated with check (owner_id = auth.uid());
-create policy tontines_update on public.tontines for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy tontines_update on public.tontines for update to authenticated using (public.is_owner(id)) with check (public.is_owner(id));
 create policy tontines_delete on public.tontines for delete to authenticated using (owner_id = auth.uid());
 
 create policy members_select on public.members for select to authenticated
@@ -193,6 +203,30 @@ create policy messages_delete on public.messages for delete to authenticated
 create policy push_own on public.push_subscriptions for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- Seul le créateur nomme ou retire un organisateur, et personne ne change le créateur de la tontine.
+-- (auth.uid() est nul dans l'éditeur SQL de Supabase : l'administrateur du projet n'est pas bloqué.)
+create or replace function public.guard_organizers() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return coalesce(new, old); end if;
+  if tg_table_name = 'tontines' then
+    if new.owner_id is distinct from old.owner_id then raise exception 'owner_locked'; end if;
+    return new;
+  end if;
+  if tg_op = 'DELETE' then
+    if old.is_organizer and not public.is_creator(old.tontine_id) then raise exception 'creator_only'; end if;
+    return old;
+  end if;
+  if new.is_organizer is distinct from (case when tg_op = 'INSERT' then false else old.is_organizer end)
+     and not public.is_creator(new.tontine_id) then raise exception 'creator_only'; end if;
+  if new.is_organizer and (new.user_id is null or new.status <> 'active') then raise exception 'organizer_needs_account'; end if;
+  return new;
+end $$;
+drop trigger if exists members_guard on public.members;
+create trigger members_guard before insert or update or delete on public.members for each row execute function public.guard_organizers();
+drop trigger if exists tontines_guard on public.tontines;
+create trigger tontines_guard before update on public.tontines for each row execute function public.guard_organizers();
+
 -- ---------- Inscription par code (le demandeur n'a pas le droit d'écrire dans members) ----------
 create or replace function public.tontine_preview(p_code text)
 returns table (name text, join_open boolean)
@@ -218,7 +252,7 @@ end $$;
 
 revoke all on function public.tontine_preview(text), public.join_tontine(text, text, text) from public, anon;
 grant execute on function public.tontine_preview(text), public.join_tontine(text, text, text) to authenticated;
-grant execute on function public.is_owner(uuid), public.is_active(uuid), public.is_in(uuid),
+grant execute on function public.is_creator(uuid), public.is_owner(uuid), public.is_active(uuid), public.is_in(uuid),
   public.topic_open(uuid, uuid), public.try_uuid(text) to authenticated;
 
 grant usage on schema public to authenticated;

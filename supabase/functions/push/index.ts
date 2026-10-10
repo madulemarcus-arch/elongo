@@ -9,6 +9,7 @@
 //   2. par la tâche planifiée de Supabase (pg_cron), avec l'en-tête x-cron-secret :
 //        { kind: 'reminders' }                                rappels de cotisation (une fois par jour)
 //
+// Organisateur = créateur de la tontine ou membre actif nommé organisateur (members.is_organizer).
 // Secrets à définir dans Supabase (Edge Functions > Secrets) : VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, CRON_SECRET.
 // SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont fournis automatiquement par Supabase.
 //
@@ -45,7 +46,7 @@ export async function handle(req: Request, deps: any): Promise<Response> {
 
     if (body.kind === 'payment' || body.kind === 'payout') {
       const t = await deps.getTontine(body.tontine_id);
-      if (!t || t.owner_id !== uid) return json({ error: 'forbidden' }, 403);   // only the organizer records payments
+      if (!t || !(await deps.isOrganizer(t, uid))) return json({ error: 'forbidden' }, 403);   // only an organizer records payments
       const round = Number(body.round);
       const cur = t.currency;
       let text = '', member: any = null;
@@ -155,6 +156,7 @@ if (D && D.serve) {
       getPayout: (tid: string, round: number) => one(admin.from('payouts').select('*').eq('tontine_id', tid).eq('round', round).maybeSingle()),
       getMessage: (id: string) => one(admin.from('messages').select('*').eq('id', id).maybeSingle()),
       getTopic: (id: string) => one(admin.from('topics').select('title').eq('id', id).maybeSingle()),
+      isOrganizer: async (t: any, uid: string) => t.owner_id === uid || !!(await one(admin.from('members').select('id').eq('tontine_id', t.id).eq('user_id', uid).eq('status', 'active').eq('is_organizer', true).maybeSingle())),
       audience: async (tid: string) => {
         const t = await one(admin.from('tontines').select('owner_id').eq('id', tid).maybeSingle());
         const ms = await rows(admin.from('members').select('user_id').eq('tontine_id', tid).eq('status', 'active').not('user_id', 'is', null));

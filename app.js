@@ -71,8 +71,10 @@
   };
   const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
-  const isAdmin = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
+  const isCreator = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
   const myRow = () => S.user ? S.allMembers.find(m => m.user_id === S.user.id) : null;
+  // organizer = creator, or an active member the creator named organizer
+  const isAdmin = () => isCreator() || !!(myRow() && myRow().is_organizer && myRow().status === 'active');
   const chatName = () => { const m = myRow(); return m && m.status === 'active' ? m.name : isAdmin() ? 'Organisateur' : ''; };
   const canChat = () => !!S.user && !!chatName();
 
@@ -424,7 +426,8 @@
     const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
-        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
+        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
+          ${isCreator() && m.user_id && m.user_id !== S.user.id ? `<button class="mini${ui.armed === 'orga:' + m.id ? ' armed' : ''}" data-act="orga" data-id="${esc(m.id)}">${ui.armed === 'orga:' + m.id ? 'Confirmer' : m.is_organizer ? "Retirer l'organisateur" : 'Nommer organisateur'}</button>` : ''}
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
           ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
           <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
@@ -640,6 +643,11 @@
         const r = S.pending.find(x => x.id === id); if (!r) return;
         await B.update('members', { status: 'active', position: S.members.reduce((x, m) => Math.max(x, m.position), 0) + 1 }, { id });
         await loadTable('members'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
+      } else if (act === 'orga') {
+        const m = S.members.find(x => x.id === id); if (!m || !isCreator()) return;
+        if (ui.armed !== 'orga:' + id) { ui.armed = 'orga:' + id; render(); return; }
+        ui.armed = ''; await B.update('members', { is_organizer: !m.is_organizer }, { id }); await loadTable('members');
+        toast(m.is_organizer ? m.name + ' est maintenant organisateur.' : m.name + " n'est plus organisateur.");
       } else if (act === 'reject') { await B.remove('members', { id }); await loadTable('members');
       } else if (act === 'copy') {
         ui.copyText = reminderText(S.cfg, D);

@@ -123,3 +123,23 @@ select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 select pg_temp.zero('intrus ne lit pas les fichiers', $$select count(*)::int from storage.objects$$);
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select pg_temp.check('organisateur lit les fichiers', (select count(*) from storage.objects) = 1);
+
+-- co-organizer: only the creator names one; a co-organizer works like the creator except for naming and deleting the tontine
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.zero('membre ne se nomme pas organisateur', $$with u as (update members set is_organizer = true where user_id = '00000000-0000-0000-0000-00000000000b' returning 1) select count(*)::int from u$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.fails('membre sans compte ne peut pas être organisateur', $$update members set is_organizer = true where name = 'Alice'$$);
+update members set is_organizer = true where user_id = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.check('co-organisateur lit les téléphones', (select count(*) from contacts) >= 1);
+update tontines set name = 'Tontine renommée';
+select pg_temp.check('co-organisateur modifie les réglages', (select name from tontines) = 'Tontine renommée');
+select pg_temp.fails('co-organisateur ne change pas le créateur', $$update tontines set owner_id = '00000000-0000-0000-0000-00000000000b'$$);
+select pg_temp.zero('co-organisateur ne supprime pas la tontine', $$with d as (delete from tontines returning 1) select count(*)::int from d$$);
+select pg_temp.fails('co-organisateur ne nomme personne', $$update members set is_organizer = true where name = 'Alice'$$);
+select pg_temp.fails('co-organisateur ne se retire pas lui-même', $$update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b'$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.zero('ancien co-organisateur ne lit plus les téléphones', $$select count(*)::int from contacts$$);
