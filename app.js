@@ -716,10 +716,13 @@
     try {
       if (f.id === 'authForm') {
         const email = f.email.value.trim(), password = f.password.value, err = $('authErr'); err.textContent = '';
+        const btn = f.querySelector('button.primary'), label = btn.textContent, slow = setTimeout(() => { err.textContent = 'La connexion est lente, patientez un instant…'; }, 6000);
+        if (btn.disabled) return;
+        btn.disabled = true; btn.textContent = label.startsWith('Créer') ? 'Création…' : 'Connexion…';
         try {
-          if (f.querySelector('button.primary').textContent.startsWith('Créer')) { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Confirmez votre e-mail (lien reçu par message), puis connectez-vous.'; ui.authMode = 'in'; } }
+          if (label.startsWith('Créer')) { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Confirmez votre e-mail (lien reçu par message), puis connectez-vous.'; ui.authMode = 'in'; } }
           else await B.signIn(email, password);
-        } catch (e) { err.textContent = friendly(e) + (/Invalid login credentials/i.test(String(e && e.message)) ? " Pas encore de compte ? Appuyez sur « Créer un compte », en haut." : ''); }
+        } catch (e) { err.textContent = friendly(e) + (/Invalid login credentials/i.test(String(e && e.message)) ? " Pas encore de compte ? Appuyez sur « Créer un compte », en haut." : ''); } finally { clearTimeout(slow); if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
       } else if (f.id === 'createForm') {
         const v = fv(f), cfg = { name: v['c.name'].trim(), amount: Number(v['c.amount']), currency: (v['c.cur'] || 'FC').trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(v['c.days'])) || 30)), start_date: v['c.start'] || todayISO(), penalty: 0, reminder_days: 3, country_code: '243', join_open: true };
         const me = (v['c.me'] || '').trim();
