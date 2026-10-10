@@ -323,7 +323,7 @@
     const header = `<header><p class="eyebrow">Tontine</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
       <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
-    if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? '<button type="button" data-act="undo">Annuler le dernier tour</button>' : ''}</section>`;
+    if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? undoBtn(D, '') : ''}</section>`;
     const due = roundDate(c, D.cur), late = dayDiff(due, todayISO()) < 0, pot = c.amount * D.n, got = D.got, pct = Math.min(100, Math.round(100 * got / pot)), miss = D.n - D.paidIds.size;
     const me = myRow(), mi = me ? S.members.findIndex(m => m.id === me.id) : -1;
     let mine = '', remind = '';
@@ -338,7 +338,7 @@
       }
     }
     const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
-      + (D.cur > 0 ? '<button class="ghost" data-act="undo">Annuler le tour précédent</button>' : '') + '</div>' : '';
+      + (D.cur > 0 ? undoBtn(D, 'ghost') : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><p class="when" style="opacity:.75;font-size:.9rem">Tour de ${c.interval_days} jour${c.interval_days > 1 ? 's' : ''}, du ${esc(fmtShort(roundStart(c, D.cur)))} au ${esc(fmtShort(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
       <div class="pot"><div><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div></div>
@@ -346,6 +346,8 @@
       <div class="lbl num">${money(got)} encaissés sur ${money(pot)}, ${got < pot ? `il reste ${money(pot - got)} à encaisser` : 'cagnotte complète, prête à être remise'}</div></div>${mine}${remind}${act}</section>`;
     return header + hero + contribPanel(c, D);
   }
+  // Takes back the last payout (the beneficiary goes back to "not served yet"); asks twice so it cannot happen by accident.
+  const undoBtn = (D, cls) => { const n = S.members[D.cur - 1], armed = ui.armed === 'undo'; return `<button type="button" class="${cls}${armed ? ' armed' : ''}" data-act="undo">${armed ? 'Confirmer : annuler la remise' : 'Annuler la remise de ' + esc(n ? n.name : 'ce tour')}</button>`; };
   function contribPanel(c, D) {
     const owed = S.members.reduce((t, m) => { const r = S.pay.get(D.cur + '_' + m.id); return t + (r && r.penalty_paid ? 0 : penOf(c, D, m)); }, 0);
     const adm = isAdmin(), me = myRow();
@@ -373,7 +375,7 @@
     return '<section class="panel"><h2>Calendrier des tours</h2><ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}</li>`;
+      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
     }).join('') + '</ul></section>';
   }
 
@@ -719,12 +721,15 @@
         notify({ kind: 'payout', tontine_id: S.tid, round: D.cur });
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
       } else if (act === 'undo') {
-        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('Le tour précédent est de nouveau en cours.');
+        if (D.cur < 1) return;
+        if (ui.armed !== 'undo') { ui.armed = 'undo'; render(); return; }
+        const who = S.members[D.cur - 1];
+        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('La remise à ' + (who ? who.name : 'ce membre') + ' est annulée : son tour est de nouveau en cours.');
       } else if (act === 'unserve') {
         const i = S.members.findIndex(m => m.id === id); if (i < 0 || !S.out.has(i)) return;
         if (ui.armed !== 'unserve:' + id) { ui.armed = 'unserve:' + id; render(); return; }
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
-        toast(S.members[i].name + " n'est plus marqué comme servi.");
+        toast('La remise à ' + S.members[i].name + ' est annulée : il n\'est plus marqué comme servi.');
       } else if (act === 'up' || act === 'down') {
         ui.armed = ''; const i = S.members.findIndex(m => m.id === id), j = act === 'up' ? i - 1 : i + 1;
         if (j < D.cur || j < 0 || j >= D.n || S.out.has(i) || S.out.has(j)) return;

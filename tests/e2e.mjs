@@ -324,6 +324,8 @@ await Bp.waitForSelector('.toast.show:has-text("Marcus a reçu la cagnotte")');
 // undo previous round, then redo it
 await tab(A, 'tour');
 await A.click('[data-act=undo]');
+await A.waitForSelector('[data-act=undo]:has-text("Confirmer")');
+await A.click('[data-act=undo]');
 await A.waitForSelector('text=Tour 1 sur 4');
 await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
 await A.waitForSelector('text=Tour 2 sur 4');
@@ -341,6 +343,19 @@ await A.waitForSelector('text=Tour 1 sur 4');
 await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
 await A.waitForSelector('text=Tour 2 sur 4');
 step('served by mistake: put back to not served');
+
+// ... and also straight from the calendar
+await tab(A, 'calendrier');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") [data-act=unserve]:has-text("Confirmer")');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") .pill.done', { state: 'detached' });
+assert.equal(await Bp.locator('[data-act=unserve]').count(), 0, 'a plain member has no cancel button');
+await tab(A, 'tour');
+await A.waitForSelector('text=Tour 1 sur 4');
+await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
+await A.waitForSelector('text=Tour 2 sur 4');
+step('payout cancelled from the calendar');
 
 // Round 2 is in the future (5 days left): no late pill, no penalty, member reminder only when close
 t = await text(A);
