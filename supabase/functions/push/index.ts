@@ -6,7 +6,9 @@
 //        { kind: 'payout',   tontine_id, round }              cagnotte remise (organisateur)
 //        { kind: 'message',  message_id }                     nouveau message (auteur du message)
 //      Le texte de la notification est recomposé ici à partir de la base : un client ne peut pas envoyer de texte libre.
-//   2. par la tâche planifiée de Supabase (pg_cron), avec l'en-tête x-cron-secret :
+//        { kind: 'remind',   tontine_id }                     rappel manuel aux membres qui n'ont pas tout versé (organisateur,
+//                                                             une fois toutes les 3 heures au plus ; répond qui a été prévenu et qui ne l'a pas pu)
+//   2. par la tâche planifiée de Supabase (pg_cron), avec l'en-tête x-cron-secret (facultatif, non utilisé en production) :
 //        { kind: 'reminders' }                                rappels de cotisation (une fois par jour)
 //
 // Organisateur = créateur de la tontine ou membre actif nommé organisateur (members.is_organizer).
@@ -68,6 +70,19 @@ export async function handle(req: Request, deps: any): Promise<Response> {
       return json(await deliver(deps, { title: t.name, body: text, url: './#/direct', tag: `${body.kind}-${t.id}-${round}-${body.member_id || ''}` }, to));
     }
 
+    if (body.kind === 'remind') {
+      const t = await deps.getTontine(body.tontine_id);
+      if (!t || !(await deps.isOrganizer(t, uid))) return json({ error: 'forbidden' }, 403);
+      const since = new Date((deps.now ? deps.now() : Date.now()) - 3 * 3600e3).toISOString();
+      let recent = false; try { recent = !!(deps.recentReminder && await deps.recentReminder(t.id, since)); } catch { /* journal not available: no throttle from here */ }
+      if (recent) return json({ error: 'too_soon' }, 429);
+      const members = await deps.activeMembers(t.id);
+      const served = new Set(await deps.payoutRounds(t.id));
+      let cur = 0; while (served.has(cur)) cur++;
+      if (!members.length || cur >= members.length) return json({ owing: 0, notified: 0, sent: 0, failed: 0, removed: 0, unreachable: [] });
+      return json(await remindRound(deps, t, cur, dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), deps.today()), members));
+    }
+
     if (body.kind === 'message') {
       const m = await deps.getMessage(body.message_id);
       if (!m || m.author_id !== uid) return json({ error: 'forbidden' }, 403);   // only the author announces a message
@@ -104,7 +119,28 @@ async function deliver(deps: any, payload: unknown, userIds: Set<string>) {
   return out;
 }
 
-// Daily reminder for every member who has not paid the current round yet, from `reminder_days` before the date on.
+// Reminder for every member who still owes the current round. Returns who was reached and who could not be (no account, no device).
+async function remindRound(deps: any, t: any, cur: number, days: number, members: any[]) {
+  const out = { owing: 0, notified: 0, sent: 0, failed: 0, removed: 0, unreachable: [] as string[] };
+  const paid: Map<string, number> = await deps.paymentsOfRound(t.id, cur);
+  const price = Number(t.amount);
+  for (const m of members) {
+    const rest = price - Number(paid.get(m.id) || 0);
+    if (rest <= 0) continue;
+    out.owing++;
+    if (!m.user_id) { out.unreachable.push(m.name); continue; }
+    const when = days < 0 ? `en retard de ${-days} jour${days < -1 ? 's' : ''}` : days === 0 ? "attendue aujourd'hui" : days === 1 ? 'attendue demain' : `attendue dans ${days} jours`;
+    const text = days < 0
+      ? `Cotisation ${when} : il vous reste ${fmt(rest)} ${t.currency} à verser (tour ${cur + 1}).`
+      : `Cotisation ${when} : ${fmt(rest)} ${t.currency} à verser (tour ${cur + 1}).`;
+    const r = await deliver(deps, { title: t.name, body: text, url: './#/tour', tag: `rappel-${t.id}-${cur}` }, new Set([m.user_id]));
+    out.sent += r.sent; out.failed += r.failed; out.removed += r.removed;
+    if (r.sent > 0) out.notified++; else out.unreachable.push(m.name);
+  }
+  return out;
+}
+
+// Daily reminder (pg_cron, optional) for every member who has not paid the current round yet, from `reminder_days` before the date on.
 async function reminders(deps: any) {
   const total = { sent: 0, failed: 0, removed: 0, tontines: 0 };
   const today: string = deps.today();
@@ -116,20 +152,9 @@ async function reminders(deps: any) {
     if (cur >= members.length) continue;
     const days = dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), today);   // a round of N days ends N days after it starts
     if (days > Number(t.reminder_days)) continue;
-    const paid: Map<string, number> = await deps.paymentsOfRound(t.id, cur);
-    const price = Number(t.amount);
     total.tontines++;
-    for (const m of members) {
-      if (!m.user_id) continue;
-      const rest = price - Number(paid.get(m.id) || 0);
-      if (rest <= 0) continue;
-      const when = days < 0 ? `en retard de ${-days} jour${days < -1 ? 's' : ''}` : days === 0 ? "attendue aujourd'hui" : days === 1 ? 'attendue demain' : `attendue dans ${days} jours`;
-      const text = days < 0
-        ? `Cotisation ${when} : il vous reste ${fmt(rest)} ${t.currency} à verser (tour ${cur + 1}).`
-        : `Cotisation ${when} : ${fmt(rest)} ${t.currency} à verser (tour ${cur + 1}).`;
-      const r = await deliver(deps, { title: t.name, body: text, url: './#/tour', tag: `rappel-${t.id}-${cur}` }, new Set([m.user_id]));
-      total.sent += r.sent; total.failed += r.failed; total.removed += r.removed;
-    }
+    const r = await remindRound(deps, t, cur, days, members);
+    total.sent += r.sent; total.failed += r.failed; total.removed += r.removed;
   }
   return total;
 }
@@ -157,6 +182,7 @@ if (D && D.serve) {
       getMessage: (id: string) => one(admin.from('messages').select('*').eq('id', id).maybeSingle()),
       getTopic: (id: string) => one(admin.from('topics').select('title').eq('id', id).maybeSingle()),
       isOrganizer: async (t: any, uid: string) => t.owner_id === uid || !!(await one(admin.from('members').select('id').eq('tontine_id', t.id).eq('user_id', uid).eq('status', 'active').eq('is_organizer', true).maybeSingle())),
+      recentReminder: async (tid: string, since: string) => { const { data, error } = await admin.from('journal').select('id').eq('tontine_id', tid).like('text', 'Rappel envoyé%').gte('created_at', since).limit(1); if (error) return false; return (data || []).length > 0; },
       audience: async (tid: string) => {
         const t = await one(admin.from('tontines').select('owner_id').eq('id', tid).maybeSingle());
         const ms = await rows(admin.from('members').select('user_id').eq('tontine_id', tid).eq('status', 'active').not('user_id', 'is', null));

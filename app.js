@@ -401,8 +401,8 @@
   const undoBtn = (D, cls) => { const n = S.members[D.cur - 1], armed = ui.armed === 'undo'; return `<button type="button" class="${cls}${armed ? ' armed' : ''}" data-act="undo">${armed ? 'Confirmer : annuler la remise' : 'Annuler la remise de ' + esc(n ? n.name : 'ce tour')}</button>`; };
   function contribPanel(c, D) {
     const owed = S.members.reduce((t, m) => { const r = S.pay.get(D.cur + '_' + m.id); return t + (r && r.penalty_paid ? 0 : penOf(c, D, m)); }, 0);
-    const adm = isAdmin(), me = myRow();
-    return `<section class="panel" id="contrib"><div class="chead"><h2>Cotisations du tour ${D.cur + 1}</h2>${adm ? `<span><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', reminderText(c, D)))}">Rappel au groupe (WhatsApp)</a> <button class="mini" data-act="copy">Copier</button></span>` : ''}</div>`
+    const adm = isAdmin(), me = myRow(), owing = S.members.filter(m => !D.paidIds.has(m.id));
+    return `<section class="panel" id="contrib"><div class="chead"><h2>Cotisations du tour ${D.cur + 1}</h2>${adm ? `<span><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', reminderText(c, D)))}">Rappel au groupe (WhatsApp)</a> <button class="mini" data-act="copy">Copier</button>${owing.length ? ` <button class="mini${ui.armed === 'remind' ? ' armed' : ''}" data-act="remind">${ui.armed === 'remind' ? 'Confirmer : prévenir ' + owing.length + ' membre' + (owing.length > 1 ? 's' : '') : '🔔 Rappeler (' + owing.length + ')'}</button>` : ''}</span>` : ''}</div>`
       + (ui.copyText ? `<textarea class="copybox" id="copyBox" readonly aria-label="Message de rappel">${esc(ui.copyText)}</textarea>` : '')
       + (owed ? `<p class="pen" style="margin:0 0 8px">Pénalités à percevoir : ${money(owed)}</p>` : '')
       + '<ul class="list">' + S.members.map((m, i) => {
@@ -412,6 +412,14 @@
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
           <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
       }).join('') + '</ul></section>';
+  }
+  // Result of a manual reminder: who was reached, and who must be reminded another way (WhatsApp)
+  function remindResultDialog(r) {
+    const c = S.cfg, D = derive(), un = (r.unreachable || []).map(n => S.members.find(m => m.name === n)).filter(Boolean);
+    $('modalBody').innerHTML = `<h2>Rappel envoyé</h2><p>${r.notified} membre${r.notified > 1 ? 's' : ''} prévenu${r.notified > 1 ? 's' : ''} par notification (${r.owing} n'ont pas tout versé).</p>
+      ${un.length ? `<h3 style="margin-top:12px">À relancer autrement</h3><p class="hint">Ces membres n'ont pas de compte ou pas de notification active. Relancez-les par WhatsApp.</p><ul class="list">${un.map(m => { const ph = waPhone(c, S.contacts.get(m.id)); return `<li class="row"><div class="grow name">${esc(m.name)}</div>${ph ? `<a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(ph, personalText(c, D, m)))}">WhatsApp</a>` : '<span class="sub">Sans numéro</span>'}</li>`; }).join('')}</ul>` : ''}
+      <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
+    $('modal').showModal();
   }
   // One member's contribution for the current round, in a sheet: history, penalty, new versement, undo, WhatsApp reminder.
   function payDialog(id) {
@@ -869,6 +877,19 @@
       } else if (act === 'copylink') {
         try { await navigator.clipboard.writeText(inviteLink()); toast("Lien d'invitation copié."); } catch (e) { toast(inviteLink()); }
       } else if (act === 'manage') { payDialog(id); return;
+      } else if (act === 'remind') {
+        const owing = S.members.filter(m => !D.paidIds.has(m.id)); if (!owing.length) return;
+        if (ui.armed !== 'remind') { ui.armed = 'remind'; render(); return; }
+        ui.armed = '';
+        const key = 'lisanga.remind:' + S.tid;
+        if (Date.now() - Number(store.get(key) || 0) < 3 * 3600e3) { toast('Un rappel est déjà parti il y a moins de 3 heures.'); render(); return; }
+        toast('Envoi du rappel…');
+        const r = await B.invoke(PUSH_FN, { kind: 'remind', tontine_id: S.tid });
+        if (!r) { toast(B.mode === 'demo' ? "Mode démonstration : aucune notification réelle n'est envoyée." : "Le rappel n'a pas pu partir (un rappel est peut-être déjà parti il y a moins de 3 heures). Essayez WhatsApp."); render(); return; }
+        if (!r.owing) { toast('Tout le monde a versé : personne à rappeler.'); render(); return; }
+        store.set(key, String(Date.now()));
+        audit('Rappel envoyé : ' + r.notified + ' membre' + (r.notified > 1 ? 's' : '') + ' prévenu' + (r.notified > 1 ? 's' : '') + ' par notification' + (r.unreachable && r.unreachable.length ? ', ' + r.unreachable.length + ' à relancer par WhatsApp' : '') + ' (tour ' + (D.cur + 1) + ')');
+        render(); remindResultDialog(r); return;
       } else if (act === 'pen') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id);
         if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); audit('Pénalité de ' + nameOf(id) + (rec.penalty_paid ? ' remise en attente' : ' marquée réglée') + ', tour ' + (D.cur + 1)); payDialog(id); }
