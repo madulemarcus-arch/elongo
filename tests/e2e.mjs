@@ -58,6 +58,7 @@ const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return 
 const d$ = (key) => `[data-d="${key}"]`;
 const text = async p => (await p.textContent('main')).replace(/\s+/g, ' ');
 const tab = (p, name) => p.click(`a[data-tab=${name}]`);
+const openPay = async name => { await A.click(`li:has-text("${name}") [data-act=manage]`); await A.waitForSelector('#modal[open] #payErr'); };   // the member's payment sheet
 
 // ---------- Organizer: account + tontine ----------
 await A.goto(url);
@@ -140,12 +141,13 @@ await A.waitForSelector('text=Tour 1 sur 4');
 let t = await text(A);
 assert.ok(t.includes('Marcus') && t.includes('En retard'), 'round 1 is late');
 assert.ok(t.replace(/\s/g, '').includes('40000FC'), 'pot = 4 members x 10 000');
-await A.fill('li:has-text("Alice") input.vin', '4000');
-await A.click('li:has-text("Alice") [data-act=vers]');
-await A.waitForSelector('.toast.show:has-text("Choisissez comment")');   // the way the money arrived is required
+await openPay('Alice');
+await A.fill('#modalBody input.vin', '4000');
+await A.click('#modalBody [data-act=vers]');
+await A.waitForSelector('#payErr:has-text("Choisissez comment")');   // the way the money arrived is required (shown inside the sheet)
 assert.equal(await A.locator('li:has-text("Alice") .pill.part').count(), 0, 'nothing recorded without a payment method');
-await A.selectOption('li:has-text("Alice") select.msel', 'mpesa');
-await A.click('li:has-text("Alice") [data-act=vers]');
+await A.selectOption('#modalBody select.msel', 'mpesa');
+await A.click('#modalBody [data-act=vers]');
 await A.waitForSelector('li:has-text("Alice"):has-text("reste 6")');
 assert.ok((await text(A)).replace(/\s/g, '').includes('Versé4000FCsur10000FC'));
 assert.ok((await text(A)).includes('Pénalité'), 'late partial payment still shows the penalty');
@@ -156,12 +158,16 @@ await Bp.waitForSelector('table.mx td.p:has-text("40%")');
 await Bp.waitForSelector('.toast.show:has-text("Alice a versé")');
 step('partial payment visible live to the member');
 
-await A.fill('li:has-text("Alice") input.vin', '6000');
-await A.selectOption('li:has-text("Alice") select.msel', 'cash_orga');
-await A.click('li:has-text("Alice") [data-act=vers]');
+await openPay('Alice');
+await shot(A, '04c-fiche-versement');
+await A.fill('#modalBody input.vin', '6000');
+await A.selectOption('#modalBody select.msel', 'cash_orga');
+await A.click('#modalBody [data-act=vers]');
 await A.waitForSelector('li:has-text("Alice") .pill.ok:has-text("Complet")');
-await A.click('li:has-text("Alice") [data-act=pen]');
+await openPay('Alice');
+await A.click('#modalBody [data-act=pen]');
 await A.waitForSelector('li:has-text("Alice") .pen.settled');
+await A.click('#modal [data-m=close]');
 step('full payment + penalty settled');
 
 // Member detail: number of payments, money paid, how it was sent
@@ -178,29 +184,37 @@ await A.waitForSelector('#modal[open]', { state: 'detached' });
 step('member detail: count, total, payment methods');
 
 // Over-payment is capped, empty amount refused, cancel last installment works
-await A.fill('li:has-text("Bob") input.vin', '25000');
-await A.click('li:has-text("Bob") [data-act=vers]');
+await openPay('Bob');
+await A.fill('#modalBody input.vin', '25000');
+await A.click('#modalBody [data-act=vers]');
 await A.waitForSelector('li:has-text("Bob") .pill.ok:has-text("Complet")');
 assert.ok((await text(A)).replace(/\s/g, '').includes('Complet:10000FC'), 'over-payment capped at the contribution');
-await A.click('li:has-text("Bob") [data-act=unvers]');
+await openPay('Bob');
+await A.click('#modalBody [data-act=unvers]');
 await A.waitForSelector('li:has-text("Bob") .pill.wait');
-await A.fill('li:has-text("Bob") input.vin', '0');
-await A.click('li:has-text("Bob") [data-act=vers]');
-await A.waitForSelector('.toast.show:has-text("montant supérieur à 0")');
+await openPay('Bob');
+await A.fill('#modalBody input.vin', '0');
+await A.click('#modalBody [data-act=vers]');
+await A.waitForSelector('#payErr:has-text("montant supérieur à 0")');
+await A.click('#modal [data-m=close]');
 step('over-payment capped, undo, zero refused');
 
 // WhatsApp links: personal reminder for an unpaid member with phone, group reminder
-const href = await A.getAttribute('li:has-text("Chantal") a.lnk', 'href');
+await openPay('Chantal');
+const href = await A.getAttribute('#modalBody a.lnk', 'href');
+await A.click('#modal [data-m=close]');
 assert.ok(href.startsWith('https://wa.me/243991112222?text='), 'local number gets the country code');
 assert.ok(decodeURIComponent(href).includes('Bonjour Chantal') && decodeURIComponent(href).includes('Tontine des amis'));
 const groupHref = await A.getAttribute('#contrib .chead a.lnk', 'href');
 assert.ok(decodeURIComponent(groupHref).includes('Rappel tontine « Tontine des amis », tour 1/4'));
 assert.ok(decodeURIComponent(groupHref).includes('Bénéficiaire : Marcus'));
-assert.equal(await A.locator('li:has-text("Alice") a.lnk').count(), 0, 'no reminder for someone who paid');
+await openPay('Alice');
+assert.equal(await A.locator('#modalBody a.lnk').count(), 0, 'no reminder for someone who paid');
+await A.click('#modal [data-m=close]');
 step('WhatsApp reminders');
 
 // Member view: no controls, no phones
-assert.equal(await Bp.locator('[data-act=vers]').count(), 0);
+assert.equal(await Bp.locator('[data-act=vers]').count() + await Bp.locator('[data-act=manage]').count(), 0);
 await tab(Bp, 'tour');
 await Bp.waitForSelector('text=Tour 1 sur 4');
 t = await text(Bp);
@@ -302,11 +316,11 @@ await A.click('.tabbar a[data-tab=tour]');
 step('request linked to a member added by hand: no duplicate, organizer button available');
 
 // ---------- Payout, calendar ----------
-await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
+await openPay('Marcus'); await A.fill('#modalBody input.vin', '10000'); await A.click('#modalBody [data-act=vers]');
 await A.waitForSelector('li:has-text("Marcus") .pill.ok');
-await A.fill('li:has-text("Bob") input.vin', '10000'); await A.click('li:has-text("Bob") [data-act=vers]');
+await openPay('Bob'); await A.fill('#modalBody input.vin', '10000'); await A.click('#modalBody [data-act=vers]');
 await A.waitForSelector('li:has-text("Bob") .pill.ok');
-await A.click('li:has-text("Chantal") [data-act=vers]'); // pre-filled with the remaining amount
+await openPay('Chantal'); await A.click('#modalBody [data-act=vers]'); // pre-filled with the remaining amount
 await A.waitForSelector('li:has-text("Chantal") .pill.ok');
 await A.waitForSelector('text=Cagnotte complète');
 await A.click('[data-act=payout]');

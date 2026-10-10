@@ -334,7 +334,7 @@
   function viewTour(D) {
     const c = S.cfg;
     const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
-      ? `<div class="remind"><b>Alertes sur ce téléphone</b><br>Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée.<div class="versrow"><button class="mini primary" data-act="pushon">Activer les notifications</button><button class="mini" data-act="pushlater">Plus tard</button></div></div>` : '';
+      ? `<div class="remind compact" title="Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée."><span>🔔 <b>Alertes sur ce téléphone</b></span><span class="versrow"><button class="mini primary" data-act="pushon">Activer</button><button class="mini" data-act="pushlater">Plus tard</button></span></div>` : '';
     const hi = (chatName() || '').split(' ')[0], header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
       <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
@@ -371,16 +371,27 @@
       + (owed ? `<p class="pen" style="margin:0 0 8px">Pénalités à percevoir : ${money(owed)}</p>` : '')
       + '<ul class="list">' + S.members.map((m, i) => {
         const paid = D.paidIds.has(m.id), rec = S.pay.get(D.cur + '_' + m.id), a = D.amt.get(m.id) || 0, rest = Math.max(0, c.amount - a), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-        const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}${adm && rec ? ` <button class="mini" data-act="pen" data-id="${esc(m.id)}" aria-pressed="${settled}">${settled ? 'Annuler' : 'Marquer réglée'}</button>` : ''}</div>` : '';
-        const hist = rec && rec.log && rec.log.length ? `<div class="sub">Versements : ${rec.log.slice(-3).map(x => money(x.a) + (x.m ? ' · ' + esc(methodName(x.m)) : '') + ' (' + esc(fmtShort(x.at)) + ')').join(', ')}</div>` : '';
-        const ctl = adm ? `<div class="versrow">${rest > 0 ? `<input class="vin" type="number" min="1" step="any" max="${rest}" data-d="v.${esc(m.id)}" value="${esc(dv('v.' + m.id, rest))}" aria-label="Montant versé par ${esc(m.name)}">${methodSelect(m.id, dv('m.' + m.id, lastMethod()))}<button class="mini primary" data-act="vers" data-id="${esc(m.id)}">Verser</button>` : ''}${a > 0 ? `<button class="mini" data-act="unvers" data-id="${esc(m.id)}">Annuler le dernier</button>` : ''}</div>` : '';
-        const ph = adm && !paid ? waPhone(c, S.contacts.get(m.id)) : '';
-        const wa = ph ? `<div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(ph, personalText(c, D, m)))}">Relancer sur WhatsApp</a></div>` : '';
-        return `<li class="row${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
+        return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
           <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}</div>
-          <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${hist}${penLine}${ctl}${wa}</div>
-          <span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span></li>`;
+          <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
+          <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
       }).join('') + '</ul></section>';
+  }
+  // One member's contribution for the current round, in a sheet: history, penalty, new versement, undo, WhatsApp reminder.
+  function payDialog(id) {
+    const c = S.cfg, D = derive(), m = S.members.find(x => x.id === id); if (!c || !m || D.cur >= D.n) return;
+    const rec = S.pay.get(D.cur + '_' + id), a = D.amt.get(id) || 0, rest = Math.max(0, c.amount - a), paid = D.paidIds.has(id), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
+    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + rec.log.slice().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}</div></div></li>`).join('') + '</ul>' : '';
+    const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}" style="margin-top:8px">Pénalité ${money(pen)}${settled ? ' réglée' : ''} <button class="mini" data-act="pen" data-id="${esc(id)}" aria-pressed="${settled}"${rec ? '' : ' disabled'}>${settled ? 'Annuler' : 'Marquer réglée'}</button></div>` : '';
+    const ph = !paid ? waPhone(c, S.contacts.get(id)) : '';
+    $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">Tour ${D.cur + 1} · cotisation de ${money(c.amount)}</p>
+      <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" style="margin:10px 0 4px"><i style="width:${pct}%"></i></div>
+      <p class="sub num">${paid ? 'Complet' : a > 0 ? `Versé ${money(a)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}</p>${penLine}
+      ${rest > 0 ? `<h3 style="margin-top:12px">Enregistrer un versement</h3><div class="versrow"><input class="vin" type="number" min="1" step="any" max="${rest}" data-d="v.${esc(id)}" value="${esc(dv('v.' + id, rest))}" aria-label="Montant versé par ${esc(m.name)}">${methodSelect(id, dv('m.' + id, lastMethod()))}<button class="mini primary" data-act="vers" data-id="${esc(id)}">Verser</button></div>` : ''}
+      <p class="lock-err" id="payErr" role="alert"></p>${hist}
+      <div class="versrow" style="margin-top:12px">${a > 0 ? `<button class="mini" data-act="unvers" data-id="${esc(id)}">Annuler le dernier</button>` : ''}${ph ? `<a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(ph, personalText(c, D, m)))}">Relancer sur WhatsApp</a>` : ''}</div>
+      <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
+    $('modal').showModal();
   }
 
   // ----- calendar -----
@@ -786,20 +797,22 @@
         catch (e) { toast('Copie automatique impossible. Copiez le texte affiché.'); }
       } else if (act === 'copylink') {
         try { await navigator.clipboard.writeText(inviteLink()); toast("Lien d'invitation copié."); } catch (e) { toast(inviteLink()); }
+      } else if (act === 'manage') { payDialog(id); return;
       } else if (act === 'pen') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id);
-        if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); }
+        if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); payDialog(id); }
       } else if (act === 'vers') {
         ui.armed = ''; const c = S.cfg, rec = S.pay.get(D.cur + '_' + id), have = paidOf(rec), inp = document.querySelector('input[data-d="v.' + id + '"]'), v = Number(inp ? inp.value : c.amount - have);
-        if (!(v > 0)) { toast('Entrez un montant supérieur à 0.'); return; }
+        const say = t => { const e = $('payErr'); if (e && $('modal').open) e.textContent = t; else toast(t); };   // the sheet hides the toast, so errors show inside it
+        if (!(v > 0)) { say('Entrez un montant supérieur à 0.'); return; }
         const msel = document.querySelector('select[data-d="m.' + id + '"]'), method = msel ? msel.value : '';
-        if (!METHODS[method]) { toast("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
+        if (!METHODS[method]) { say("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
         store.set('lisanga.lastmethod', method);
-        const add = Math.min(v, c.amount - have); if (add <= 0) { toast('Cette cotisation est déjà complète.'); return; }
+        const add = Math.min(v, c.amount - have); if (add <= 0) { say('Cette cotisation est déjà complète.'); return; }
         const total = have + add, today = todayISO();
         await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today, m: method }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
         notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
-        delete ui.draft['v.' + id]; await loadTable('payments');
+        delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close();
         toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
         buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
       } else if (act === 'unvers') {
@@ -807,7 +820,7 @@
         const log = (rec.log || []).slice(0, -1);
         if (!log.length) await B.remove('payments', eqPay(D.cur, id));
         else await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: log.reduce((t, x) => t + x.a, 0), paid_on: log[log.length - 1].at, done_on: null, log, penalty_paid: rec.penalty_paid }), 'tontine_id,round,member_id');
-        delete ui.draft['v.' + id]; await loadTable('payments'); toast('Dernier versement annulé.');
+        delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close(); toast('Dernier versement annulé.');
       } else if (act === 'payout') {
         if (ui.armed !== 'payout') { ui.armed = 'payout'; render(); return; }
         ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur, member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
