@@ -278,7 +278,7 @@
         else if (dd <= c.reminder_days) remind = `<div class="remind"><b>Rappel :</b> il vous reste ${money(rest)} à verser, attendu ${esc(rel(due))} (${esc(fmtShort(due))}).</div>`;
       }
     }
-    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
+    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
       + (D.cur > 0 ? '<button class="ghost" data-act="undo">Annuler le tour précédent</button>' : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">${esc(fmtDate(due))} · ${esc(rel(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
@@ -363,13 +363,13 @@
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
       <button class="mini primary" data-act="accept" data-id="${esc(r.id)}">Accepter</button><button class="mini danger" data-act="reject" data-id="${esc(r.id)}">Refuser</button></li>`).join('') : '<li class="hint">Aucune demande pour le moment.</li>'}</ul></div>`;
-    const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
+    const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
-        const locked = i < D.cur;
+        const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${esc(m.name)}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
-          ${locked ? '<span class="pill done">Servi</span>' : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur ? ' disabled' : ''}>↑</button>
-          <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 ? ' disabled' : ''}>↓</button>
+          ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
+          <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
           <button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}</li>`;
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
@@ -584,9 +584,14 @@
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
       } else if (act === 'undo') {
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('Le tour précédent est de nouveau en cours.');
+      } else if (act === 'unserve') {
+        const i = S.members.findIndex(m => m.id === id); if (i < 0 || !S.out.has(i)) return;
+        if (ui.armed !== 'unserve:' + id) { ui.armed = 'unserve:' + id; render(); return; }
+        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
+        toast(S.members[i].name + " n'est plus marqué comme servi.");
       } else if (act === 'up' || act === 'down') {
         ui.armed = ''; const i = S.members.findIndex(m => m.id === id), j = act === 'up' ? i - 1 : i + 1;
-        if (j < D.cur || j < 0 || j >= D.n) return;
+        if (j < D.cur || j < 0 || j >= D.n || S.out.has(i) || S.out.has(j)) return;
         const a = S.members[i], o = S.members[j], pa = a.position === o.position ? a.position + 1 : a.position;
         await B.update('members', { position: o.position }, { id: a.id }); await B.update('members', { position: pa }, { id: o.id });
         if (a.position === o.position) await B.update('members', { position: o.position }, { id: a.id });

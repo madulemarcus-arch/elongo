@@ -201,6 +201,19 @@ await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
 await A.waitForSelector('text=Tour 2 sur 4');
 step('payout computed automatically, calendar, undo/redo');
 
+// Served by mistake: the organizer can put a member back to "not served yet" from the member list
+await tab(A, 'organisateur');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") [data-act=unserve].armed');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") [data-act=up]');
+assert.equal(await A.locator('li:has-text("Marcus") .pill.done').count(), 0, 'Marcus is no longer marked as served');
+await tab(A, 'tour');
+await A.waitForSelector('text=Tour 1 sur 4');
+await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
+await A.waitForSelector('text=Tour 2 sur 4');
+step('served by mistake: put back to not served');
+
 // Round 2 is in the future (5 days left): no late pill, no penalty, member reminder only when close
 t = await text(A);
 assert.ok(!t.includes('En retard'));
