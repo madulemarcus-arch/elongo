@@ -43,6 +43,26 @@
   const lastMethod = () => { const v = store.get('lisanga.lastmethod'); return METHODS[v] ? v : ''; };
   const methodSelect = (id, sel) => `<select class="msel" data-d="m.${esc(id)}" aria-label="Moyen de paiement"><option value="">Moyen de paiement…</option>${METHOD_GROUPS.map(([label, keys]) => `<optgroup label="${esc(label)}">${keys.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(METHODS[k])}</option>`).join('')}</optgroup>`).join('')}</select>`;
 
+  // ----- theme: automatic (follows the phone), light or dark; the choice is kept on this device -----
+  const THEMES = ['auto', 'light', 'dark'], THEME_NAMES = { auto: 'automatique', light: 'clair', dark: 'sombre' };
+  const THEME_ICONS = {
+    auto: '<path d="M12 3a9 9 0 1 0 0 18z" fill="currentColor"/><circle cx="12" cy="12" r="9"/>',
+    light: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>',
+    dark: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>' };
+  const getTheme = () => { const v = store.get('elongo.theme'); return THEMES.includes(v) ? v : 'auto'; };
+  function applyTheme() {
+    const t = getTheme(), r = document.documentElement;
+    if (t === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', t);
+    const dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches), meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.setAttribute('content', dark ? '#0b1640' : '#13255b');
+    const b = $('themeBtn'); if (b) {
+      b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${THEME_ICONS[t]}</svg>`;
+      b.setAttribute('aria-label', 'Thème : ' + THEME_NAMES[t] + '. Appuyez pour changer.'); b.title = 'Thème : ' + THEME_NAMES[t];
+    }
+  }
+  function setTheme(t) { store.set('elongo.theme', t); applyTheme(); }
+  if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => { if (getTheme() === 'auto') applyTheme(); }); }
+
   // ----- life: vibration and confetti (both skipped when the phone asks for reduced motion) -----
   const reduceMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const buzz = ms => { try { if (navigator.vibrate && !reduceMotion()) navigator.vibrate(ms); } catch (e) {} };
@@ -964,17 +984,21 @@
       await loadTable('contacts'); toast('Numéro enregistré.');
     } catch (e) { toast(friendly(e)); }
   });
+  $('themeBtn').addEventListener('click', () => { const t = THEMES[(THEMES.indexOf(getTheme()) + 1) % THEMES.length]; setTheme(t); toast('Thème ' + THEME_NAMES[t] + '.'); });
+  applyTheme();
   $('userChip').addEventListener('click', () => {
     const m = $('modal'), body = $('modalBody');
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
+      <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : '🌙 Sombre'}</button>`).join('')}</div>
       ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
   });
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal')) $('modal').close(); return; }
+    if (b.dataset.m.startsWith('theme:')) { setTheme(b.dataset.m.slice(6)); document.querySelectorAll('#modalBody [data-m^="theme:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'theme:' + getTheme()))); return; }
     if (b.dataset.m === 'pinform') { pinForm(); return; }
     if (b.dataset.m === 'pinsave' || b.dataset.m === 'pindel') { await pinAction(b.dataset.m); return; }
     $('modal').close();
