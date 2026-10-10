@@ -415,6 +415,13 @@ const pdfBytes = await readFile(await dl.path());
 assert.equal(pdfBytes.subarray(0, 5).toString(), '%PDF-');
 assert.ok(pdfBytes.length > 3000);
 step('PDF export');
+const [dl2] = await Promise.all([A.waitForEvent('download'), A.click('#csvBtn')]);
+assert.match(dl2.suggestedFilename(), /^versements-\d{4}-\d{2}-\d{2}\.csv$/);
+const csv = (await readFile(await dl2.path())).toString('utf8');
+assert.ok(csv.startsWith('\ufeffDate;Tour;Membre;Montant (FC);Moyen de paiement'), 'CSV header with BOM: ' + csv.slice(0, 80));
+assert.ok(/;Alice;4000;M-Pesa/.test(csv) && /;Alice;6000;Cash à l'organisateur/.test(csv), 'CSV lists the versements with their method: ' + csv);
+assert.ok((await text(A)).includes('sans compte'), 'hint about members without account');
+step('versements exported as CSV, hint for members without account');
 
 // ---------- Persistence, install, offline ----------
 await A.reload();

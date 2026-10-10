@@ -319,7 +319,7 @@
   function viewTour(D) {
     const c = S.cfg;
     const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
-      ? `<div class="remind"><b>Alertes sur ce téléphone</b><br>Soyez prévenu des versements, des messages et des rappels, même appli fermée.<div class="versrow"><button class="mini primary" data-act="pushon">Activer les notifications</button><button class="mini" data-act="pushlater">Plus tard</button></div></div>` : '';
+      ? `<div class="remind"><b>Alertes sur ce téléphone</b><br>Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée.<div class="versrow"><button class="mini primary" data-act="pushon">Activer les notifications</button><button class="mini" data-act="pushlater">Plus tard</button></div></div>` : '';
     const header = `<header><p class="eyebrow">Tontine</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
       <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
@@ -408,7 +408,7 @@
       <div class="invite-code" aria-label="Code d'invitation">${esc(c.code)}</div>
       <p style="margin:10px 0 0"><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', "Rejoignez notre tontine « " + c.name + " » sur Elongo : " + inviteLink()))}">Envoyer l'invitation sur WhatsApp</a> <button class="mini" data-act="copylink">Copier le lien</button></p>
       ${c.join_open ? '' : '<p class="hint" style="margin-top:8px">Les inscriptions sont fermées : réactivez-les dans les réglages.</p>'}</div>`;
-    const exp = `<div><h3>Export</h3><p class="hint" style="margin:6px 0 10px">Un PDF avec la cagnotte, le calendrier, les cotisations du tour et le tableau des paiements.</p><button class="primary" id="pdfBtn" type="button" data-act="exportpdf">Exporter la liste en PDF</button></div>`;
+    const exp = `<div><h3>Export</h3><p class="hint" style="margin:6px 0 10px">Un PDF avec la cagnotte, le calendrier, les cotisations du tour, le récapitulatif par membre, l'historique des versements et le tableau des paiements. Le fichier Excel (CSV) liste tous les versements avec leur date, leur tour et leur moyen de paiement.</p><div class="versrow"><button class="primary" id="pdfBtn" type="button" data-act="exportpdf">Exporter en PDF</button><button id="csvBtn" type="button" data-act="exportcsv">Exporter les versements (Excel)</button></div></div>`;
     const cfg = `<div><h3>Réglages de la tontine</h3><form class="grid" id="cfgForm" style="margin-top:12px">
       <label class="f">Nom du groupe<input data-d="s.name" value="${esc(dv('s.name', c.name))}" required maxlength="60"></label>
       <label class="f">Cotisation par membre<input data-d="s.amount" value="${esc(dv('s.amount', c.amount))}" type="number" min="1" step="any" required></label>
@@ -424,6 +424,7 @@
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
       <button class="mini primary" data-act="accept" data-id="${esc(r.id)}">Accepter</button><button class="mini danger" data-act="reject" data-id="${esc(r.id)}">Refuser</button></li>`).join('') : '<li class="hint">Aucune demande pour le moment.</li>'}</ul></div>`;
     const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
+      ${S.members.some(m => !m.user_id) ? `<p class="hint" style="margin-top:6px">Les membres « sans compte » ont été ajoutés à la main. Pour pouvoir en nommer un organisateur, il doit d'abord rejoindre la tontine avec le lien d'invitation et créer son compte.</p>` : ''}
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
@@ -580,10 +581,36 @@
       const r = S.pay.get(D.cur + '_' + m.id), p = penOf(c, D, m), a = D.amt.get(m.id) || 0;
       return [m.name, m$(a), m$(Math.max(0, c.amount - a)), a >= c.amount ? 'Complet' : a > 0 ? 'Partiel' : 'Non payé', r && r.paid_on ? fmtShort(r.paid_on) : '-', r && r.log && r.log.length && r.log[r.log.length - 1].m ? methodName(r.log[r.log.length - 1].m) : '-', p ? m$(p) + (r && r.penalty_paid ? ' (réglée)' : '') : '-'];
     }) });
+    const hist = paymentRows();
+    if (hist.length) {
+      const per = new Map(S.members.map(m => [m.id, { n: 0, sum: 0, by: new Map() }]));
+      hist.forEach(r => { const o = per.get(r.id); if (!o) return; o.n++; o.sum += r.a; o.by.set(r.m, (o.by.get(r.m) || 0) + 1); });
+      section('Récapitulatif par membre', { head: [['Membre', 'Versements', 'Total versé', 'Moyens de paiement']], body: S.members.map(m => { const o = per.get(m.id); return [m.name, o.n, m$(o.sum), o.n ? [...o.by].map(([k, n]) => methodName(k) + ' (' + n + ')').join(', ') : '-']; }) });
+      section('Historique des versements', { head: [['Date', 'Tour', 'Membre', 'Montant', 'Moyen']], body: hist.map(r => [r.at ? fmtShort(r.at) : '-', r.round + 1, r.name, m$(r.a), methodName(r.m)]) });
+    }
     section('Paiements par tour', { head: [['Membre', ...S.members.map((_, r) => String(r + 1))]], styles: { fontSize: 8, halign: 'center' }, columnStyles: { 0: { halign: 'left' } },
       body: S.members.map(m => [m.name, ...S.members.map((_, r) => { const a = paidOf(S.pay.get(r + '_' + m.id)); return a >= c.amount ? 'Payé' : a > 0 ? Math.round(100 * a / c.amount) + '%' : r < D.cur ? 'Non' : ''; })]) });
     const slug = c.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'tontine';
     doc.save('tontine-' + slug + '.pdf'); toast('PDF enregistré.');
+  }
+
+  // ----- every versement of the tontine, oldest first (PDF history and CSV export) -----
+  function paymentRows() {
+    const rows = [];
+    S.pay.forEach(rec => {
+      const m = S.allMembers.find(x => x.id === rec.member_id); if (!m) return;
+      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach(x => rows.push({ round: rec.round, name: m.name, id: m.id, a: Number(x.a), at: String(x.at || ''), m: x.m || '' }));
+    });
+    return rows.sort((a, b) => a.at.localeCompare(b.at) || a.round - b.round);
+  }
+  function exportCsv() {
+    const c = S.cfg, rows = paymentRows();
+    if (!c || !rows.length) { toast('Aucun versement à exporter.'); return; }
+    const cell = v => { const s = String(v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };   // ';' separator and BOM: opens correctly in French Excel
+    const lines = [['Date', 'Tour', 'Membre', 'Montant (' + c.currency + ')', 'Moyen de paiement'], ...rows.map(r => [r.at, r.round + 1, r.name, r.a, methodName(r.m)])].map(l => l.map(cell).join(';'));
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'versements-' + todayISO() + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('Fichier des versements enregistré.');
   }
 
   // ----- member detail: number of payments, money paid, how it was sent -----
@@ -627,6 +654,7 @@
       if (act === 'voice') { toggleRec(); return; }
       if (act === 'rmpending') { ui.pending = null; renderPending(); return; }
       if (act === 'exportpdf') { exportPdf(); return; }
+      if (act === 'exportcsv') { exportCsv(); return; }
       if (act === 'cancelreq') { const r = myRow(); if (r) await B.remove('members', { id: r.id }); await bootstrap(); go('#/accueil'); return; }
       const D = derive();
       if (act === 'delmsg') {
@@ -792,7 +820,7 @@
     const m = $('modal'), body = $('modalBody');
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
-      ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, messages et rappels.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
+      ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
