@@ -422,9 +422,10 @@
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
+      ${S.members.some(m => !m.user_id) ? `<select class="msel" data-d="l.${esc(r.id)}" aria-label="Relier à un membre déjà dans la liste"><option value="">Nouveau membre</option>${S.members.filter(m => !m.user_id).map(m => `<option value="${esc(m.id)}"${dv('l.' + r.id, '') === m.id ? ' selected' : ''}>C'est : ${esc(m.name)}</option>`).join('')}</select>` : ''}
       <button class="mini primary" data-act="accept" data-id="${esc(r.id)}">Accepter</button><button class="mini danger" data-act="reject" data-id="${esc(r.id)}">Refuser</button></li>`).join('') : '<li class="hint">Aucune demande pour le moment.</li>'}</ul></div>`;
     const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
-      ${S.members.some(m => !m.user_id) ? `<p class="hint" style="margin-top:6px">Les membres « sans compte » ont été ajoutés à la main. Pour pouvoir en nommer un organisateur, il doit d'abord rejoindre la tontine avec le lien d'invitation et créer son compte.</p>` : ''}
+      ${S.members.some(m => !m.user_id) ? `<p class="hint" style="margin-top:6px">Les membres « sans compte » ont été ajoutés à la main. Pour pouvoir en nommer un organisateur, il doit rejoindre la tontine avec le lien d'invitation et créer son compte. Quand vous acceptez sa demande, choisissez « C'est : » suivi de son nom pour relier son compte à sa ligne, au lieu de créer un doublon.</p>` : ''}
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
@@ -669,6 +670,14 @@
         toast('Chargement…'); await loadAtt(m.att);
       } else if (act === 'accept') {
         const r = S.pending.find(x => x.id === id); if (!r) return;
+        const lsel = document.querySelector('select[data-d="l.' + id + '"]'), target = lsel ? S.members.find(m => m.id === lsel.value && !m.user_id) : null;
+        if (target) {   // the person is already in the list (added by hand): give that line the new account, keep its place and payments
+          const phone = S.contacts.get(id);
+          await B.remove('members', { id }); await B.update('members', { user_id: r.user_id }, { id: target.id });
+          if (phone && !S.contacts.get(target.id)) await B.upsert('contacts', { member_id: target.id, tontine_id: S.tid, phone }, 'member_id');
+          delete ui.draft['l.' + id]; await loadTable('members'); await loadTable('contacts');
+          toast(target.name + ' est maintenant relié à son compte.'); return;
+        }
         await B.update('members', { status: 'active', position: S.members.reduce((x, m) => Math.max(x, m.position), 0) + 1 }, { id });
         await loadTable('members'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
       } else if (act === 'orga') {
