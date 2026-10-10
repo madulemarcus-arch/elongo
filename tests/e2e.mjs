@@ -276,6 +276,31 @@ await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'hidden' }
 await A.click('.tabbar a[data-tab=tour]'); await Bp.click('.tabbar a[data-tab=tour]');
 step('co-organizer: named by the creator, gets the organizer space, can be removed');
 
+// ---------- Link a new account to a member added by hand ----------
+const Cp = await ctx.newPage();
+await Cp.goto(url + '#/rejoindre/' + code);
+await Cp.waitForSelector('#authForm');
+await Cp.fill('#authForm input[name=email]', 'david@example.cd');
+await Cp.fill('#authForm input[name=password]', 'secret789');
+await Cp.click('#authForm button.primary');
+await Cp.waitForSelector('h2:has-text("Rejoindre « Tontine des amis »")');
+await Cp.fill(d$('j.name'), 'David');
+await Cp.click('#joinCodeForm button.primary');
+await Cp.waitForSelector('h2:has-text("Demande envoyée")');
+await A.click('.tabbar a[data-tab=organisateur]');
+await A.waitForSelector('li:has-text("David") [data-act=accept]');
+assert.equal(await A.locator('li:has-text("Bob") [data-act=orga]').count(), 0, 'Bob has no account yet, so no organizer button');
+await A.selectOption('li:has-text("David") select.msel', { label: "C'est : Bob" });
+await A.click('li:has-text("David") [data-act=accept]');
+await A.waitForSelector('li:has-text("David")', { state: 'detached' });
+await A.waitForSelector('li:has-text("Bob") [data-act=orga]');
+assert.equal(await A.locator('li:has-text("Bob") :text("sans compte")').count(), 0, 'Bob is linked to David\'s account');
+assert.equal(await A.locator('#view ul.list li .name:has-text("Bob")').count(), 1, 'no duplicate line');
+await Cp.waitForSelector('.tabbar a[data-tab=tour]', { state: 'visible' });
+await Cp.close();
+await A.click('.tabbar a[data-tab=tour]');
+step('request linked to a member added by hand: no duplicate, organizer button available');
+
 // ---------- Payout, calendar ----------
 await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
 await A.waitForSelector('li:has-text("Marcus") .pill.ok');

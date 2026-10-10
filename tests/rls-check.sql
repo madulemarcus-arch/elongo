@@ -143,3 +143,18 @@ select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b';
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.zero('ancien co-organisateur ne lit plus les téléphones', $$select count(*)::int from contacts$$);
+
+-- link a new account to a member added by hand (what "C'est : Alice" does): remove the request, give the line the account
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
+select pg_temp.fails('inscriptions fermées pour le test de liaison', format('select join_tontine(%L, ''Dora'')', current_setting('app.code')));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+update tontines set join_open = true;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
+select join_tontine(current_setting('app.code'), 'Dora');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+delete from members where user_id = '00000000-0000-0000-0000-00000000000d' and status = 'pending';
+update members set user_id = '00000000-0000-0000-0000-00000000000d' where name = 'Alice';
+select pg_temp.check('la ligne d''Alice est reliée au compte', (select count(*) from members where name = 'Alice' and user_id = '00000000-0000-0000-0000-00000000000d' and status = 'active') = 1);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
+select pg_temp.check('le compte relié voit la tontine', (select count(*) from tontines) = 1);

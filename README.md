@@ -11,6 +11,7 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 - **Cotisations par versements partiels**, annulation du dernier versement, **pénalités de retard** (à marquer réglées).
 - **Moyen de paiement** obligatoire à chaque versement (M-Pesa, Orange Money, Airtel Money, Illico Cash, cash à l'organisateur ou au caissier).
 - **Exports** : PDF (cagnotte, calendrier, cotisations du tour, récapitulatif par membre, historique des versements, tableau des paiements) et fichier Excel (CSV) de tous les versements avec date, tour et moyen de paiement.
+- **Relier un compte à un membre ajouté à la main** : à l'acceptation d'une demande, l'organisateur choisit « C'est : <nom> » pour donner le compte à la ligne existante (ordre de passage et versements conservés, pas de doublon).
 - **Co-organisateurs** : le créateur de la tontine peut nommer organisateur un membre qui a un compte (bouton dans l'espace organisateur). Il peut alors tout faire sauf nommer ou retirer des organisateurs et supprimer la tontine.
 - **Code de déverrouillage** facultatif, défini par chaque membre dans « Mon compte » (4 à 6 chiffres, sur son appareil) : demandé à l'ouverture et après une minute d'absence.
 - **Fiche d'un membre** : un clic sur son nom affiche le nombre de versements, le total versé, le total par moyen de paiement et le détail.
