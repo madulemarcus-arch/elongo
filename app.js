@@ -217,7 +217,7 @@
   // ----- auth & onboarding -----
   function viewAuth() {
     const code = sessionStorage.getItem('lisanga.code'), up = ui.authMode === 'up';
-    return `<section class="panel auth"><p class="eyebrow">Tontine</p><h2>Lisanga</h2><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
+    return `<section class="panel auth"><p class="eyebrow">Tontine</p><h2>Elongo</h2><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
       <form id="authForm"><label class="f">Adresse e-mail<input type="email" name="email" required autocomplete="email" inputmode="email"></label>
@@ -236,7 +236,7 @@
   const joinFields = () => `<input data-d="j.name" value="${esc(dv('j.name', ''))}" maxlength="40" placeholder="Votre nom" aria-label="Votre nom" required>
       <input data-d="j.phone" value="${esc(dv('j.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone WhatsApp" aria-label="Votre numéro de téléphone">`;
   function viewWelcome() {
-    return `<section class="panel empty"><h2>Bienvenue sur Lisanga</h2><p class="hint">Créez la tontine de votre groupe, ou rejoignez celle de vos amis avec le code que l'organisateur vous a donné.</p>${S.tid ? '<p style="margin-top:12px"><button type="button" data-act="back">Retour à ma tontine</button></p>' : ''}</section>
+    return `<section class="panel empty"><h2>Bienvenue sur Elongo</h2><p class="hint">Créez la tontine de votre groupe, ou rejoignez celle de vos amis avec le code que l'organisateur vous a donné.</p>${S.tid ? '<p style="margin-top:12px"><button type="button" data-act="back">Retour à ma tontine</button></p>' : ''}</section>
       ${createForm()}
       <section class="panel"><h2>Rejoindre une tontine</h2><form id="joinCodeForm" class="addrow" style="margin-top:0">
         <input data-d="j.code" value="${esc(dv('j.code', ''))}" maxlength="20" placeholder="Code d'invitation" aria-label="Code d'invitation" required autocapitalize="none">${joinFields()}
@@ -347,7 +347,7 @@
     const c = S.cfg;
     const invite = `<div><h3>Inviter des membres</h3><p class="hint" style="margin:6px 0 10px">Envoyez ce lien : la personne crée son compte et vous demande à rejoindre, vous validez ensuite sa demande.</p>
       <div class="invite-code" aria-label="Code d'invitation">${esc(c.code)}</div>
-      <p style="margin:10px 0 0"><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', "Rejoignez notre tontine « " + c.name + " » sur Lisanga : " + inviteLink()))}">Envoyer l'invitation sur WhatsApp</a> <button class="mini" data-act="copylink">Copier le lien</button></p>
+      <p style="margin:10px 0 0"><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', "Rejoignez notre tontine « " + c.name + " » sur Elongo : " + inviteLink()))}">Envoyer l'invitation sur WhatsApp</a> <button class="mini" data-act="copylink">Copier le lien</button></p>
       ${c.join_open ? '' : '<p class="hint" style="margin-top:8px">Les inscriptions sont fermées : réactivez-les dans les réglages.</p>'}</div>`;
     const exp = `<div><h3>Export</h3><p class="hint" style="margin:6px 0 10px">Un PDF avec la cagnotte, le calendrier, les cotisations du tour et le tableau des paiements.</p><button class="primary" id="pdfBtn" type="button" data-act="exportpdf">Exporter la liste en PDF</button></div>`;
     const cfg = `<div><h3>Réglages de la tontine</h3><form class="grid" id="cfgForm" style="margin-top:12px">
@@ -493,7 +493,7 @@
     const c = S.cfg, D = derive();
     if (!c || !D.n) { toast('Rien à exporter pour le moment.'); return; }
     if (!(window.jspdf && window.jspdf.jsPDF)) { toast("Le module PDF ne s'est pas chargé. Rechargez la page."); return; }
-    const m$ = n => pdfNum(n) + ' ' + c.currency, doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' }), teal = [11, 107, 92], M = { left: 40, right: 40 };
+    const m$ = n => pdfNum(n) + ' ' + c.currency, doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' }), teal = [19, 37, 91], M = { left: 40, right: 40 };
     let y = 50;
     doc.setFontSize(20); doc.text(c.name, 40, y); doc.setFontSize(10); y += 18;
     doc.text(`Cotisation ${m$(c.amount)} par membre, ${freqText(c)}. ${D.n} membres. Édité le ${fmtShort(todayISO())}.`, 40, y);

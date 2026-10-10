@@ -5,7 +5,7 @@
 import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 
-const TEAL = '#0b6b5c', DEEP = '#084e43', GOLD = '#e0a526', MINT = '#dcefe9';
+const TEAL = '#13255b', DEEP = '#0b1640', GOLD = '#f4b73f', MINT = '#cdd8fb';
 function svg({ rounded, scale }) {
   const people = Array.from({ length: 6 }, (_, i) => {
     const a = (i / 6) * Math.PI * 2 - Math.PI / 2, x = 256 + Math.cos(a) * 150, y = 256 + Math.sin(a) * 150;
@@ -16,8 +16,8 @@ function svg({ rounded, scale }) {
     <g transform="translate(256 256) scale(${scale}) translate(-256 -256)">
       <circle cx="256" cy="256" r="196" fill="none" stroke="${DEEP}" stroke-width="10"/>
       ${people}
-      <circle cx="256" cy="256" r="70" fill="${GOLD}"/><circle cx="256" cy="256" r="52" fill="none" stroke="#b9831a" stroke-width="6"/>
-      <text x="256" y="278" font-family="system-ui, sans-serif" font-size="68" font-weight="800" text-anchor="middle" fill="#3a2a00">L</text>
+      <circle cx="256" cy="256" r="70" fill="${GOLD}"/><circle cx="256" cy="256" r="52" fill="none" stroke="#c58b1c" stroke-width="6"/>
+      <text x="256" y="278" font-family="system-ui, sans-serif" font-size="68" font-weight="800" text-anchor="middle" fill="#3b2a00">E</text>
     </g></svg>`;
 }
 const browser = await chromium.launch();

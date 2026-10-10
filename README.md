@@ -1,4 +1,4 @@
-# Lisanga
+# Elongo
 
 Application de suivi de tontine, **installable comme une vraie application (PWA)**. Les membres du groupe voient les mêmes données **en direct**, partagées par un serveur Supabase.
 

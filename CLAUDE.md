@@ -4,7 +4,7 @@ Guide pour Claude Code dans ce dépôt.
 
 ## Projet
 
-Lisanga : PWA de suivi de tontine, données partagées en direct via Supabase. JavaScript vanilla, sans build : `index.html`, `styles.css`, `config.js`, `backend.js`, `app.js`, `sw.js`, `manifest.webmanifest`, `vendor/` (supabase-js, jsPDF, autotable copiés localement pour fonctionner hors ligne), `supabase/schema.sql`.
+Elongo : PWA de suivi de tontine, données partagées en direct via Supabase. JavaScript vanilla, sans build : `index.html`, `styles.css`, `config.js`, `backend.js`, `app.js`, `sw.js`, `manifest.webmanifest`, `vendor/` (supabase-js, jsPDF, autotable copiés localement pour fonctionner hors ligne), `supabase/schema.sql`.
 
 ## Commandes
 
@@ -18,7 +18,7 @@ Lisanga : PWA de suivi de tontine, données partagées en direct via Supabase. J
 - `backend.js` expose `window.Backend` avec la même API pour deux implémentations : **Supabase** (si `config.js` est rempli) et **démo** (localStorage + BroadcastChannel, session par onglet dans sessionStorage). Les lignes gardent les noms de colonnes snake_case de `schema.sql`. La démo recopie les règles de lecture et d'écriture de `schema.sql` : toute règle modifiée dans le SQL doit l'être aussi dans `demoBackend`.
 - `app.js` (IIFE, sections `// ---------- X ----------`) : état `S` (données) et `ui` (interface). `loadTable(nom)` recharge une table ; `subscribe` du backend appelle `queue(table)` qui recharge puis `route(true)`. Écrire = appel backend, puis `loadTable` de la table touchée. Les vues sont des fonctions `viewX()` qui renvoient du HTML ; la discussion garde son squelette et ne met à jour que ses parties (`renderChatParts`). Les champs `data-d="clé"` conservent leur brouillon dans `ui.draft` et le champ actif garde texte et curseur lors d'un rendu.
 - Modèle : `payments` = un cumul par (tour, membre) avec `log` des versements ; `payouts` = remise d'un tour ; le tour courant est le premier sans remise. Les tours sont datés `start_date + tour × interval_days`. Sujet « Général » = `topic_id` nul.
-- Pièces jointes : bucket privé `lisanga`, chemin `<tontine>/<user>/<fichier>`, message → `att {path,name,type,size,kind}`.
+- Pièces jointes : bucket privé `lisanga` (nom technique gardé de l'ancien nom du projet : ne pas le renommer sans migrer le stockage), chemin `<tontine>/<user>/<fichier>`, message → `att {path,name,type,size,kind}`.
 
 ## Points d'attention
 
