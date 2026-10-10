@@ -5,7 +5,7 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 ## Fonctionnalités
 
 - **Comptes** (e-mail + mot de passe). Celui qui crée la tontine en est l'organisateur.
-- **Réglages du groupe** : nom, cotisation, monnaie, **un tour tous les N jours**, date du premier tour, pénalité de retard, rappel (jours avant la date), indicatif pays pour WhatsApp, ouverture des inscriptions.
+- **Réglages du groupe** : nom, cotisation, monnaie, **durée d'un tour en jours** et début du premier tour (la date de fin de chaque tour est calculée et affichée tout de suite : « Tour 1 : du 2 oct. au 8 oct. »), pénalité de retard, rappel (jours avant la fin du tour), indicatif pays pour WhatsApp, ouverture des inscriptions.
 - **Membres et ordre de passage** : ajout à la main, montée/descente, retrait ; les membres déjà servis sont verrouillés.
 - **Inscription avec validation** : lien ou code d'invitation (onglet Organisateur) ; la personne crée son compte, demande à rejoindre, l'organisateur accepte (le membre est ajouté en fin d'ordre) ou refuse. Le téléphone n'est lisible que par l'organisateur.
 - **Cotisations par versements partiels**, annulation du dernier versement, **pénalités de retard** (à marquer réglées).

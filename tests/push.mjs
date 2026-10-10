@@ -16,7 +16,7 @@ const step = n => console.log('✓', n);
 
 // ---------- fake database ----------
 const OWNER = 'u-owner', ALICE = 'u-alice', BOB = 'u-bob', OUTSIDER = 'u-out';
-const T = { id: 't1', name: 'Tontine des amis', owner_id: OWNER, amount: 10000, currency: 'FC', interval_days: 7, start_date: '2026-10-10', reminder_days: 3 };
+const T = { id: 't1', name: 'Tontine des amis', owner_id: OWNER, amount: 10000, currency: 'FC', interval_days: 7, start_date: '2026-10-04', reminder_days: 3 };   // round 1 = 4-10 Oct, round 2 = 11-17 Oct
 const members = [
   { id: 'm0', tontine_id: 't1', name: 'Marcus', user_id: OWNER },
   { id: 'm1', tontine_id: 't1', name: 'Alice', user_id: ALICE },
@@ -100,7 +100,7 @@ await call({ kind: 'message', message_id: 'g2' }, { token: 'tok-alice' });
 assert.equal(state.sent[0].body, 'Retard de mars : 🎤 Message vocal');
 step('message notifications');
 
-// ---------- reminders (tour 1 due 2026-10-10, 3 days notice) ----------
+// ---------- reminders (tour 1 ends 2026-10-10, 3 days notice) ----------
 reset(); state.today = '2026-10-06';
 r = await j(await call({ kind: 'reminders' }, { cron: 's3cret' }));
 assert.equal(r.sent, 0, 'too early: 4 days before the date');
