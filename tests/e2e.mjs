@@ -13,7 +13,10 @@ const shots = process.argv[2];
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 const server = createServer(async (req, res) => {
   const path = join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
-  try { res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream' }); res.end(await readFile(path)); }
+  try {
+    res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream' });
+    res.end(path.endsWith('/config.js') ? 'window.LISANGA_CONFIG = {};' : await readFile(path));   // always demo mode, whatever config.js holds
+  }
   catch { res.writeHead(404); res.end(); }
 }).listen(0);
 const url = `http://localhost:${server.address().port}/`;

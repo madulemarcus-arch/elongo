@@ -9,7 +9,7 @@ Lisanga : PWA de suivi de tontine, données partagées en direct via Supabase. J
 ## Commandes
 
 - `npm start` : sert le dossier sur http://localhost:8080.
-- `npm test` : `tests/e2e.mjs`, scénario séquentiel à deux onglets (organisateur + membre) en mode démo. En cas d'échec il affiche l'état de chaque onglet. Playwright doit être résolvable (`npm i`).
+- `npm test` : `tests/e2e.mjs`, scénario séquentiel à deux onglets (organisateur + membre) en mode démo (le serveur de test renvoie une `config.js` vide, quel que soit son contenu). En cas d'échec il affiche l'état de chaque onglet. Playwright doit être résolvable (`npm i`).
 - `npm run test:sql` : applique `schema.sql` deux fois sur un PostgreSQL local jetable et exécute `tests/rls-check.sql` (droits de chaque rôle).
 - `npm run icons` : régénère `icons/*.png` depuis le SVG de `tests/icons.mjs`.
 
