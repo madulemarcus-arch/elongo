@@ -137,7 +137,9 @@ begin  -- repart de zéro pour que le script reste rejouable
   loop execute format('drop policy %I on %I.%I', r.policyname, r.schemaname, r.tablename); end loop;
 end $$;
 
-create policy tontines_select on public.tontines for select to authenticated using (public.is_in(id));
+-- owner_id est testé directement : le serveur relit la ligne qu'il vient d'insérer (INSERT ... RETURNING),
+-- et une fonction qui interroge la table ne la voit pas encore.
+create policy tontines_select on public.tontines for select to authenticated using (owner_id = auth.uid() or public.is_in(id));
 create policy tontines_insert on public.tontines for insert to authenticated with check (owner_id = auth.uid());
 create policy tontines_update on public.tontines for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy tontines_delete on public.tontines for delete to authenticated using (owner_id = auth.uid());
