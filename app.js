@@ -22,6 +22,7 @@
   const roundStart = (c, r) => plusDays(c.start_date, r * c.interval_days);
   const roundEnd = (c, r) => plusDays(c.start_date, (r + 1) * c.interval_days);
   const roundDate = roundEnd;
+  const memberLink = m => `<button type="button" class="name-link" data-act="member" data-id="${esc(m.id)}">${esc(m.name)}</button>`;
   function tourPreview(start, days, n) {
     days = Math.round(Number(days));
     if (!start || !(days >= 1)) return "Indiquez le début du premier tour et sa durée en jours : la date de fin s'affiche ici.";
@@ -34,6 +35,13 @@
   const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
   const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+  // How a payment reached the group. Stored in each entry of payments.log ({ a: amount, at: date, m: key }).
+  const METHODS = { mpesa: 'M-Pesa', orange: 'Orange Money', airtel: 'Airtel Money', illico: 'Illico Cash', cash_orga: "Cash à l'organisateur", cash_caissier: 'Cash au caissier' };
+  const METHOD_GROUPS = [['Mobile Money', ['mpesa', 'orange', 'airtel']], ['Illico', ['illico']], ['Cash', ['cash_orga', 'cash_caissier']]];
+  const methodName = k => METHODS[k] || 'Moyen non précisé';
+  const lastMethod = () => { const v = store.get('lisanga.lastmethod'); return METHODS[v] ? v : ''; };
+  const methodSelect = (id, sel) => `<select class="msel" data-d="m.${esc(id)}" aria-label="Moyen de paiement"><option value="">Moyen de paiement…</option>${METHOD_GROUPS.map(([label, keys]) => `<optgroup label="${esc(label)}">${keys.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(METHODS[k])}</option>`).join('')}</optgroup>`).join('')}</select>`;
 
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
   function friendly(e) {
@@ -345,11 +353,11 @@
       + '<ul class="list">' + S.members.map((m, i) => {
         const paid = D.paidIds.has(m.id), rec = S.pay.get(D.cur + '_' + m.id), a = D.amt.get(m.id) || 0, rest = Math.max(0, c.amount - a), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
         const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}${adm && rec ? ` <button class="mini" data-act="pen" data-id="${esc(m.id)}" aria-pressed="${settled}">${settled ? 'Annuler' : 'Marquer réglée'}</button>` : ''}</div>` : '';
-        const hist = rec && rec.log && rec.log.length ? `<div class="sub">Versements : ${rec.log.slice(-3).map(x => money(x.a) + ' (' + esc(fmtShort(x.at)) + ')').join(', ')}</div>` : '';
-        const ctl = adm ? `<div class="versrow">${rest > 0 ? `<input class="vin" type="number" min="1" step="any" max="${rest}" data-d="v.${esc(m.id)}" value="${esc(dv('v.' + m.id, rest))}" aria-label="Montant versé par ${esc(m.name)}"><button class="mini primary" data-act="vers" data-id="${esc(m.id)}">Verser</button>` : ''}${a > 0 ? `<button class="mini" data-act="unvers" data-id="${esc(m.id)}">Annuler le dernier</button>` : ''}</div>` : '';
+        const hist = rec && rec.log && rec.log.length ? `<div class="sub">Versements : ${rec.log.slice(-3).map(x => money(x.a) + (x.m ? ' · ' + esc(methodName(x.m)) : '') + ' (' + esc(fmtShort(x.at)) + ')').join(', ')}</div>` : '';
+        const ctl = adm ? `<div class="versrow">${rest > 0 ? `<input class="vin" type="number" min="1" step="any" max="${rest}" data-d="v.${esc(m.id)}" value="${esc(dv('v.' + m.id, rest))}" aria-label="Montant versé par ${esc(m.name)}">${methodSelect(m.id, dv('m.' + m.id, lastMethod()))}<button class="mini primary" data-act="vers" data-id="${esc(m.id)}">Verser</button>` : ''}${a > 0 ? `<button class="mini" data-act="unvers" data-id="${esc(m.id)}">Annuler le dernier</button>` : ''}</div>` : '';
         const ph = adm && !paid ? waPhone(c, S.contacts.get(m.id)) : '';
         const wa = ph ? `<div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(ph, personalText(c, D, m)))}">Relancer sur WhatsApp</a></div>` : '';
-        return `<li class="row${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${esc(m.name)}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
+        return `<li class="row${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
           <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}</div>
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${hist}${penLine}${ctl}${wa}</div>
           <span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span></li>`;
@@ -363,7 +371,7 @@
     return '<section class="panel"><h2>Calendrier des tours</h2><ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${esc(m.name)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}</li>`;
+      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}</li>`;
     }).join('') + '</ul></section>';
   }
 
@@ -379,7 +387,7 @@
         const cls = paid ? 'y' : part && r >= D.cur ? 'p' : r < D.cur ? 'n' : 'w', txt = paid ? '✓' : part ? Math.round(100 * a / c.amount) + '%' : r < D.cur ? '✗' : r === D.cur ? '·' : '';
         return `<td class="${cls}${r === D.cur ? ' cc' : ''}">${txt}</td>`;
       }).join('');
-      return `<tr><td>${esc(m.name)}</td>${cells}<td class="num">${got}/${Math.min(D.cur + 1, D.n)}</td></tr>`;
+      return `<tr><td>${memberLink(m)}</td>${cells}<td class="num">${got}/${Math.min(D.cur + 1, D.n)}</td></tr>`;
     }).join('');
     const ev = [];
     S.pay.forEach(v => { const n = nameOf(v.member_id); if (!n) return; ev.push({ ts: Date.parse(v.updated_at) || 0, at: v.paid_on, t: v.amount >= c.amount ? `${n} a payé toute sa cotisation du tour ${v.round + 1} (${money(v.amount)})` : `${n} a versé ${money(v.amount)} sur ${money(c.amount)} (tour ${v.round + 1})` }); });
@@ -416,7 +424,7 @@
     const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
-        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${esc(m.name)}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
+        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
           ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
           <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
@@ -565,14 +573,39 @@
       const ov = S.out.get(r);
       return [r + 1, fmtShort(roundStart(c, r)), fmtShort(roundEnd(c, r)), m.name, m$(ov ? ov.amount : c.amount * D.n), ov ? 'Reçu le ' + fmtShort(ov.paid_on) : r === D.cur ? 'En cours' : 'À venir'];
     }) });
-    if (open) section(`Cotisations du tour ${D.cur + 1}`, { head: [['Membre', 'Versé', 'Reste', 'Statut', 'Dernier versement', 'Pénalité']], body: S.members.map(m => {
+    if (open) section(`Cotisations du tour ${D.cur + 1}`, { head: [['Membre', 'Versé', 'Reste', 'Statut', 'Dernier versement', 'Moyen', 'Pénalité']], body: S.members.map(m => {
       const r = S.pay.get(D.cur + '_' + m.id), p = penOf(c, D, m), a = D.amt.get(m.id) || 0;
-      return [m.name, m$(a), m$(Math.max(0, c.amount - a)), a >= c.amount ? 'Complet' : a > 0 ? 'Partiel' : 'Non payé', r && r.paid_on ? fmtShort(r.paid_on) : '-', p ? m$(p) + (r && r.penalty_paid ? ' (réglée)' : '') : '-'];
+      return [m.name, m$(a), m$(Math.max(0, c.amount - a)), a >= c.amount ? 'Complet' : a > 0 ? 'Partiel' : 'Non payé', r && r.paid_on ? fmtShort(r.paid_on) : '-', r && r.log && r.log.length && r.log[r.log.length - 1].m ? methodName(r.log[r.log.length - 1].m) : '-', p ? m$(p) + (r && r.penalty_paid ? ' (réglée)' : '') : '-'];
     }) });
     section('Paiements par tour', { head: [['Membre', ...S.members.map((_, r) => String(r + 1))]], styles: { fontSize: 8, halign: 'center' }, columnStyles: { 0: { halign: 'left' } },
       body: S.members.map(m => [m.name, ...S.members.map((_, r) => { const a = paidOf(S.pay.get(r + '_' + m.id)); return a >= c.amount ? 'Payé' : a > 0 ? Math.round(100 * a / c.amount) + '%' : r < D.cur ? 'Non' : ''; })]) });
     const slug = c.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'tontine';
     doc.save('tontine-' + slug + '.pdf'); toast('PDF enregistré.');
+  }
+
+  // ----- member detail: number of payments, money paid, how it was sent -----
+  function memberStats(id) {
+    const rows = []; let total = 0;
+    S.pay.forEach(rec => {
+      if (rec.member_id !== id) return;
+      total += rec.amount;
+      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach(x => rows.push({ round: rec.round, a: Number(x.a), at: x.at, m: x.m || '' }));
+    });
+    rows.sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.round - a.round);
+    const by = new Map();
+    rows.forEach(r => { const o = by.get(r.m) || { n: 0, sum: 0 }; o.n++; o.sum += r.a; by.set(r.m, o); });
+    return { rows, total, by };
+  }
+  function memberDialog(id) {
+    const m = S.allMembers.find(x => x.id === id); if (!m || !S.cfg) return;
+    const st = memberStats(id), idx = S.members.findIndex(x => x.id === id), D = derive(), n = st.rows.length;
+    const where = idx < 0 ? '' : S.out.has(idx) ? `A reçu la cagnotte (tour ${idx + 1}).` : `Passe au tour ${idx + 1} sur ${D.n}.`;
+    $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>
+      <div class="statgrid"><div><div class="big num">${n}</div><div class="sub">versement${n > 1 ? 's' : ''}</div></div><div><div class="big num">${money(st.total)}</div><div class="sub">versé en tout</div></div></div>
+      <h3>Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
+      ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}</div></div></li>`).join('') + '</ul>' : ''}
+      <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
+    $('modal').showModal();
   }
 
   // ---------- Actions ----------
@@ -585,6 +618,7 @@
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
+      if (act === 'member') { memberDialog(id); return; }
       if (act === 'pushon') { await enablePush(); return; }
       if (act === 'pushlater') { store.set('lisanga.pushlater', '1'); render(); return; }
       if (act === 'voice') { toggleRec(); return; }
@@ -619,9 +653,12 @@
       } else if (act === 'vers') {
         ui.armed = ''; const c = S.cfg, rec = S.pay.get(D.cur + '_' + id), have = paidOf(rec), inp = document.querySelector('input[data-d="v.' + id + '"]'), v = Number(inp ? inp.value : c.amount - have);
         if (!(v > 0)) { toast('Entrez un montant supérieur à 0.'); return; }
+        const msel = document.querySelector('select[data-d="m.' + id + '"]'), method = msel ? msel.value : '';
+        if (!METHODS[method]) { toast("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
+        store.set('lisanga.lastmethod', method);
         const add = Math.min(v, c.amount - have); if (add <= 0) { toast('Cette cotisation est déjà complète.'); return; }
         const total = have + add, today = todayISO();
-        await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
+        await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today, m: method }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
         notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
         delete ui.draft['v.' + id]; await loadTable('payments');
         toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
@@ -745,11 +782,14 @@
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, messages et rappels.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
+      ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
   });
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal')) $('modal').close(); return; }
+    if (b.dataset.m === 'pinform') { pinForm(); return; }
+    if (b.dataset.m === 'pinsave' || b.dataset.m === 'pindel') { await pinAction(b.dataset.m); return; }
     $('modal').close();
     if (b.dataset.m === 'out') { await disablePush(); await B.signOut(); }
     else if (b.dataset.m === 'pushon') { try { await enablePush(); } catch (e) { toast('Impossible d\'activer les notifications sur cet appareil.'); } }
@@ -763,11 +803,82 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tid && S.loaded) queue('*'); });
   setInterval(() => { if (!document.hidden && S.tid && S.loaded && navigator.onLine !== false) queue('*'); }, 60000);
 
+  // ---------- Unlock code ----------
+  // Optional screen lock: each member can set a 4-6 digit code on this device. Only a salted hash is kept, in localStorage.
+  const lockKey = uid => 'elongo.lock.' + uid;
+  const getLock = () => { if (!S.user) return null; try { const v = JSON.parse(store.get(lockKey(S.user.id))); return v && v.hash ? v : null; } catch (e) { return null; } };
+  async function hashPin(pin, salt) {
+    const txt = salt + ':' + pin;
+    try { const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(d)].map(b => pad(b.toString(16))).join(''); }
+    catch (e) { let h = 2166136261; for (const c of txt) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return 'f' + (h >>> 0).toString(16); }   // insecure context fallback
+  }
+  const newSalt = () => { try { return [...crypto.getRandomValues(new Uint8Array(8))].map(b => pad(b.toString(16))).join(''); } catch (e) { return String(Math.random()).slice(2); } };
+  async function setLock(pin) { const salt = newSalt(); store.set(lockKey(S.user.id), JSON.stringify({ salt, hash: await hashPin(pin, salt), len: pin.length })); }
+  const clearLock = () => { try { localStorage.removeItem(lockKey(S.user.id)); } catch (e) {} };
+  const lockState = { fails: 0, until: 0, hiddenAt: 0 };
+  function showLock() {
+    const l = getLock(); if (!l) return;
+    let el = $('lockScreen');
+    if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lockscreen'; document.body.appendChild(el); }
+    el.innerHTML = `<div class="lockbox"><img src="icons/icon-192.png" alt="" width="64" height="64"><h1>Elongo</h1><p class="sub">Entrez votre code pour continuer.</p>
+      <input id="lockIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="Code de déverrouillage">
+      <p class="lock-err" id="lockErr" role="alert"></p>
+      <button class="primary" id="lockGo">Déverrouiller</button><button class="mini" id="lockForgot">Code oublié ?</button></div>`;
+    el.hidden = false; document.body.classList.add('locked');
+    const inp = $('lockIn'); setTimeout(() => inp.focus(), 50);
+    const err = t => { $('lockErr').textContent = t; };
+    async function tryUnlock() {
+      const wait = Math.ceil((lockState.until - Date.now()) / 1000);
+      if (wait > 0) return err(`Trop d'essais. Réessayez dans ${wait} s.`);
+      const cur = getLock(); if (!cur) return hideLock();
+      if (await hashPin(inp.value, cur.salt) === cur.hash) { lockState.fails = 0; hideLock(); return; }
+      inp.value = '';
+      if (++lockState.fails >= 5) { lockState.fails = 0; lockState.until = Date.now() + 30000; err('Code incorrect 5 fois. Patientez 30 secondes.'); } else err('Code incorrect.');
+    }
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, ''); if (inp.value.length === l.len) tryUnlock(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+    $('lockGo').onclick = tryUnlock;
+    $('lockForgot').onclick = async () => {
+      if (!confirm('Pour retrouver l\'accès, vous allez être déconnecté puis vous reconnecter avec votre e-mail et votre mot de passe. Continuer ?')) return;
+      clearLock(); hideLock(); await disablePush(); await B.signOut();
+    };
+  }
+  function hideLock() { const el = $('lockScreen'); if (el) { el.hidden = true; el.innerHTML = ''; } document.body.classList.remove('locked'); }
+  const isLocked = () => document.body.classList.contains('locked');
+  function lockSection() {
+    const has = !!getLock();
+    return `<h3 style="margin-top:12px">Code de déverrouillage</h3>
+      <p class="hint">${has ? 'Activé sur cet appareil : le code est demandé à l\'ouverture et après une absence.' : 'Protégez l\'appli sur cet appareil avec un code de 4 à 6 chiffres que vous choisissez.'}</p>
+      <p><button class="mini ${has ? '' : 'primary'}" data-m="pinform">${has ? 'Changer ou supprimer le code' : 'Définir un code'}</button></p>`;
+  }
+  function pinForm() {
+    const has = !!getLock(), f = (id, label) => `<label class="f">${label}<input id="${id}" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>`;
+    $('modalBody').innerHTML = `<h2>Code de déverrouillage</h2><p class="sub">4 à 6 chiffres, uniquement sur cet appareil.</p>
+      ${has ? f('pinOld', 'Code actuel') : ''}${f('pinNew', has ? 'Nouveau code' : 'Code')}${f('pinNew2', 'Confirmer le code')}
+      <p class="lock-err" id="pinErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" data-m="pinsave">Enregistrer</button>${has ? '<button class="danger" data-m="pindel">Supprimer le code</button>' : ''}<button data-m="close">Annuler</button></div>`;
+  }
+  async function pinAction(kind) {
+    const err = t => { $('pinErr').textContent = t; };
+    const cur = getLock(), val = id => ($(id) ? $(id).value : '');
+    if (cur && await hashPin(val('pinOld'), cur.salt) !== cur.hash) return err('Le code actuel est incorrect.');
+    if (kind === 'pindel') { clearLock(); $('modal').close(); toast('Code supprimé.'); return; }
+    const a = val('pinNew');
+    if (!/^\d{4,6}$/.test(a)) return err('Le code doit avoir 4 à 6 chiffres.');
+    if (a !== val('pinNew2')) return err('Les deux codes ne sont pas identiques.');
+    await setLock(a); $('modal').close(); toast('Code enregistré.');
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) lockState.hiddenAt = Date.now();
+    else if (lockState.hiddenAt && Date.now() - lockState.hiddenAt > 60000 && getLock() && !isLocked()) { if ($('modal').open) $('modal').close(); showLock(); }
+  });
+
   // ---------- Boot ----------
   (async () => {
     try { await B.init(); } catch (e) { toast(friendly(e)); }
     S.user = B.user;
-    B.onAuthChange(u => { S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
+    if (S.user && getLock()) showLock();
+    B.onAuthChange(u => { if (!u || (isLocked() && (!S.user || u.id !== S.user.id))) hideLock(); S.user = u; ui.draft = {}; ui.authMode = null; bootstrap(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
     await bootstrap();
     window.__lisanga = { S, ui };   // handy for debugging in the console

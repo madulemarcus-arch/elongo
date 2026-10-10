@@ -142,6 +142,10 @@ assert.ok(t.includes('Marcus') && t.includes('En retard'), 'round 1 is late');
 assert.ok(t.replace(/\s/g, '').includes('40000FC'), 'pot = 4 members x 10 000');
 await A.fill('li:has-text("Alice") input.vin', '4000');
 await A.click('li:has-text("Alice") [data-act=vers]');
+await A.waitForSelector('.toast.show:has-text("Choisissez comment")');   // the way the money arrived is required
+assert.equal(await A.locator('li:has-text("Alice") .pill.part').count(), 0, 'nothing recorded without a payment method');
+await A.selectOption('li:has-text("Alice") select.msel', 'mpesa');
+await A.click('li:has-text("Alice") [data-act=vers]');
 await A.waitForSelector('li:has-text("Alice"):has-text("reste 6")');
 assert.ok((await text(A)).replace(/\s/g, '').includes('Versé4000FCsur10000FC'));
 assert.ok((await text(A)).includes('Pénalité'), 'late partial payment still shows the penalty');
@@ -153,11 +157,25 @@ await Bp.waitForSelector('.toast.show:has-text("Alice a versé")');
 step('partial payment visible live to the member');
 
 await A.fill('li:has-text("Alice") input.vin', '6000');
+await A.selectOption('li:has-text("Alice") select.msel', 'cash_orga');
 await A.click('li:has-text("Alice") [data-act=vers]');
 await A.waitForSelector('li:has-text("Alice") .pill.ok:has-text("Complet")');
 await A.click('li:has-text("Alice") [data-act=pen]');
 await A.waitForSelector('li:has-text("Alice") .pen.settled');
 step('full payment + penalty settled');
+
+// Member detail: number of payments, money paid, how it was sent
+await A.click('li:has-text("Alice") .name-link');
+await A.waitForSelector('#modal[open] h2:has-text("Alice")');
+const detail = (await A.textContent('#modalBody')).replace(/\s+/g, ' ');
+assert.ok(/2\s*versements/.test(detail), 'two payments: ' + detail);
+assert.ok(detail.replace(/\s/g, '').includes('10000FCversé'), 'total paid: ' + detail);
+assert.ok(detail.includes('M-Pesa') && detail.includes('1 fois') && detail.replace(/\s/g, '').includes('4000FC'), 'M-Pesa: 1 payment of 4 000');
+assert.ok(detail.includes("Cash à l'organisateur") && detail.replace(/\s/g, '').includes('6000FC'), 'cash: 1 payment of 6 000');
+await shot(A, '04b-membre');
+await A.click('#modal [data-m=close]');
+await A.waitForSelector('#modal[open]', { state: 'detached' });
+step('member detail: count, total, payment methods');
 
 // Over-payment is capped, empty amount refused, cancel last installment works
 await A.fill('li:has-text("Bob") input.vin', '25000');
@@ -212,6 +230,33 @@ await Bp.click('#userChip');
 await Bp.click('[data-m=pushon]');
 await Bp.waitForFunction(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length === 1);
 step('push notifications: banner, subscribe, unsubscribe, later');
+
+// ---------- Unlock code ----------
+await Bp.click('#userChip');
+await Bp.click('[data-m=pinform]');
+await Bp.fill('#pinNew', '12'); await Bp.fill('#pinNew2', '12'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForSelector('#pinErr:has-text("4 à 6 chiffres")');
+await Bp.fill('#pinNew', '4821'); await Bp.fill('#pinNew2', '4822'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForSelector('#pinErr:has-text("pas identiques")');
+await Bp.fill('#pinNew2', '4821'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+assert.ok(!(await Bp.evaluate(() => JSON.stringify(localStorage))).includes('4821'), 'the code itself is never stored');
+await Bp.reload();
+await Bp.waitForSelector('#lockIn');
+await Bp.fill('#lockIn', '0000'); await Bp.click('#lockGo');
+await Bp.waitForSelector('#lockErr:has-text("incorrect")');
+await Bp.fill('#lockIn', '4821');   // the last digit unlocks by itself
+await Bp.waitForSelector('#lockScreen', { state: 'hidden' });
+await Bp.click('#userChip');
+await Bp.click('[data-m=pinform]');
+await Bp.fill('#pinOld', '9999'); await Bp.click('[data-m=pindel]');
+await Bp.waitForSelector('#pinErr:has-text("actuel est incorrect")');
+await Bp.fill('#pinOld', '4821'); await Bp.click('[data-m=pindel]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+await Bp.reload();
+await Bp.waitForSelector('#userChip');
+assert.equal(await Bp.locator('#lockIn').count(), 0, 'no lock once the code is removed');
+step('unlock code: set, lock on open, wrong code, unlock, remove');
 
 // ---------- Payout, calendar ----------
 await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
