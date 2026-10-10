@@ -15,27 +15,40 @@ const server = createServer(async (req, res) => {
   const path = join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
   try {
     res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream' });
-    res.end(path.endsWith('/config.js') ? 'window.LISANGA_CONFIG = {};' : await readFile(path));   // always demo mode, whatever config.js holds
+    res.end(path.endsWith('/config.js') ? "window.LISANGA_CONFIG = { vapidPublicKey: 'BNdckmrUsrW5cyZYISTbDpnDHw_ZSy7eIEAP2yg11VAeG7xEvIjyn7y90qEoEYd36xfj9V6ygHSLl71NZJBRXu4' };" : await readFile(path));   // always demo mode, whatever config.js holds
   }
   catch { res.writeHead(404); res.end(); }
 }).listen(0);
 const url = `http://localhost:${server.address().port}/`;
 
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true, permissions: ['microphone'], serviceWorkers: 'allow' });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true, permissions: ['microphone', 'notifications'], serviceWorkers: 'allow' });
+// Chromium cannot reach a real push service in a test: subscribing is faked, the rest of the flow is real.
+await ctx.addInitScript(() => {
+  if (!window.PushManager) return;
+  Object.defineProperty(Notification, 'permission', { get: () => 'granted' });   // headless Chromium reports 'denied' and shows no prompt
+  Notification.requestPermission = async () => 'granted';
+  PushManager.prototype.subscribe = async function () {
+    const endpoint = 'https://push.example/' + Math.random().toString(36).slice(2);
+    window.__sub = { endpoint, toJSON() { return { endpoint, keys: { p256dh: 'BPk', auth: 'au' } }; }, unsubscribe: async () => { window.__sub = null; return true; } };
+    return window.__sub;
+  };
+  PushManager.prototype.getSubscription = async function () { return window.__sub || null; };
+});
 const errors = [];
 const watch = (p, who) => { p.on('pageerror', e => errors.push(who + ': ' + e.message)); p.on('console', m => m.type() === 'error' && errors.push(who + ': ' + m.text())); };
 // On failure, say what each tab was showing before the stack trace.
 process.on('uncaughtException', async e => {
   for (const [who, p] of [['orga', A], ['membre', Bp]]) {
     console.error(`--- ${who}: ${p.url()}\n toast: ${await p.textContent('#toast').catch(() => '?')}\n authErr: ${await p.textContent('#authErr').catch(() => '-')}\n main: ${(await p.textContent('main').catch(() => '?')).replace(/\s+/g, ' ').slice(0, 600)}`);
-    console.error(' state:', await p.evaluate(() => { const x = window.__lisanga; return x ? JSON.stringify({ badge: document.getElementById('chatBadge').outerHTML, seen: x.ui.seen, msgs: x.S.msgs.map(m => [m.tp, m.ts, m.author_id.slice(0, 4)]), me: x.S.user.id.slice(0, 4), view: x.S.view }) : 'no debug handle'; }).catch(() => '?'));
+    console.error(' state:', await p.evaluate(() => { const x = window.__lisanga; return x ? JSON.stringify({ badge: document.getElementById('chatBadge').outerHTML, seen: x.ui.seen, msgs: x.S.msgs.map(m => [m.tp, m.ts, m.author_id.slice(0, 4)]), me: x.S.user.id.slice(0, 4), view: x.S.view, push: x.ui.push }) : 'no debug handle'; }).catch(() => '?'));
     if (shots) await p.screenshot({ path: `${shots}/echec-${who}.png`, fullPage: true }).catch(() => {});
   }
   console.error('--- console errors:', errors);
   console.error(e); process.exit(1);
 });
 const step = name => console.log('✓', name);
+await ctx.grantPermissions(['microphone', 'notifications'], { origin: url.replace(/\/$/, '') });
 const A = await ctx.newPage(), Bp = await ctx.newPage();
 watch(A, 'orga'); watch(Bp, 'membre');
 const shot = async (p, name) => shots && p.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
@@ -173,6 +186,25 @@ await Bp.waitForSelector('text=Tour 1 sur 4');
 assert.equal(await Bp.locator('text=Espace organisateur').count(), 0, 'organizer space refused to members');
 step('member view is read-only and private');
 
+// ---------- Push notifications: banner, subscription, account dialog ----------
+const pushRows = p => p.evaluate(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length);
+await tab(Bp, 'tour');
+await Bp.waitForSelector('.remind:has-text("Alertes sur ce téléphone")');
+await Bp.click('[data-act=pushon]');
+await Bp.waitForSelector('.remind:has-text("Alertes sur ce téléphone")', { state: 'detached' });
+assert.equal(await pushRows(Bp), 1, 'the device subscription is stored');
+await Bp.click('#userChip');
+await Bp.waitForSelector('#modalBody:has-text("Activées sur cet appareil")');
+await Bp.click('[data-m=pushoff]');
+await Bp.waitForSelector('.remind:has-text("Alertes sur ce téléphone")');
+assert.equal(await pushRows(Bp), 0, 'turning notifications off removes the subscription');
+await Bp.click('[data-act=pushlater]');
+await Bp.waitForSelector('.remind:has-text("Alertes sur ce téléphone")', { state: 'detached' });
+await Bp.click('#userChip');
+await Bp.click('[data-m=pushon]');
+await Bp.waitForFunction(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length === 1);
+step('push notifications: banner, subscribe, unsubscribe, later');
+
 // ---------- Payout, calendar ----------
 await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
 await A.waitForSelector('li:has-text("Marcus") .pill.ok');
@@ -200,6 +232,19 @@ await A.waitForSelector('text=Tour 1 sur 4');
 await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
 await A.waitForSelector('text=Tour 2 sur 4');
 step('payout computed automatically, calendar, undo/redo');
+
+// Served by mistake: the organizer can put a member back to "not served yet" from the member list
+await tab(A, 'organisateur');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") [data-act=unserve].armed');
+await A.click('li:has-text("Marcus") [data-act=unserve]');
+await A.waitForSelector('li:has-text("Marcus") [data-act=up]');
+assert.equal(await A.locator('li:has-text("Marcus") .pill.done').count(), 0, 'Marcus is no longer marked as served');
+await tab(A, 'tour');
+await A.waitForSelector('text=Tour 1 sur 4');
+await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
+await A.waitForSelector('text=Tour 2 sur 4');
+step('served by mistake: put back to not served');
 
 // Round 2 is in the future (5 days left): no late pill, no penalty, member reminder only when close
 t = await text(A);
@@ -318,6 +363,19 @@ await A.waitForSelector('text=Tour 2 sur 4');
 await ctx.setOffline(false);
 step('persistence, manifest, offline app shell');
 
+// Signing out removes this device from the notifications of that account
+await A.click('#userChip');
+await A.click('[data-m=pushon]');
+await A.waitForFunction(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length === 2);
+await A.click('#userChip');
+await A.click('[data-m=out]');
+await A.waitForSelector('#authForm');
+assert.equal(await pushRows(A), 1, 'signing out unsubscribes the device of that account');
+await A.fill('#authForm input[name=email]', 'marcus@example.cd');
+await A.fill('#authForm input[name=password]', 'secret123');
+await A.click('#authForm button.primary');
+await A.waitForSelector('a[data-tab=organisateur]');
+
 // Sign out / sign in again
 await A.click('#userChip');
 await A.click('[data-m=out]');
@@ -330,6 +388,31 @@ await A.fill('#authForm input[name=password]', 'secret123');
 await A.click('#authForm button.primary');
 await A.waitForSelector('a[data-tab=organisateur]');
 step('sign-out / wrong password / sign-in');
+
+// ---------- Service worker: a push message becomes a notification ----------
+// A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).
+// Chromium shows no real notifications in a test, so showNotification is replaced by a recorder; the push itself goes through the real event.
+{
+  const ctx2 = await browser.newContext(), pg = await ctx2.newPage(), cdp = await ctx2.newCDPSession(pg), regs = [];
+  cdp.on('ServiceWorker.workerRegistrationUpdated', e => regs.push(...e.registrations));
+  await cdp.send('ServiceWorker.enable');
+  await pg.goto(url); await pg.evaluate(() => navigator.serviceWorker.ready);
+  const until = async (fn, what) => { for (let i = 0; i < 100; i++) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 100)); } throw new Error('timeout: ' + what); };
+  const sw = await until(() => ctx2.serviceWorkers().find(w => w.url().endsWith('/sw.js')), 'service worker');
+  const id = await until(() => regs[0] && regs[0].registrationId, 'registration');
+  await sw.evaluate(() => { self.__shown = []; self.registration.showNotification = async (title, opts) => { self.__shown.push({ title, ...opts }); }; });
+  await pg.goto('about:blank');
+  const push = data => cdp.send('ServiceWorker.deliverPushMessage', { origin: new URL(url).origin, registrationId: id, data });
+  await push(JSON.stringify({ title: 'Tontine des amis', body: 'Alice a payé toute sa cotisation (tour 1).', url: './#/direct', tag: 'payment-1' }));
+  await until(() => sw.evaluate(() => self.__shown.length), 'first notification');
+  await push('bonjour');
+  await until(() => sw.evaluate(() => self.__shown.length > 1), 'plain-text notification');
+  const shown = await sw.evaluate(() => self.__shown);
+  assert.deepEqual([shown[0].title, shown[0].body, shown[0].tag, shown[0].data.url, shown[0].icon], ['Tontine des amis', 'Alice a payé toute sa cotisation (tour 1).', 'payment-1', './#/direct', 'icons/icon-192.png']);
+  assert.deepEqual([shown[1].title, shown[1].body, shown[1].data.url], ['Elongo', 'bonjour', './#/tour'], 'a plain-text push still shows something');
+  await ctx2.close();
+  step('service worker: push message -> notification');
+}
 
 const filtered = errors.filter(e => !/Failed to load resource.*(404|net::ERR_INTERNET_DISCONNECTED)/.test(e));
 assert.deepEqual(filtered, [], 'no console errors');

@@ -35,6 +35,27 @@ Sans configuration, l'appli tourne en **mode démo** : les données restent dans
 
 Après toute modification d'un fichier de l'appli, incrémentez `VERSION` dans `sw.js` pour que les téléphones prennent la nouvelle version.
 
+## Notifications push (versements, messages, rappels)
+
+Les membres reçoivent une alerte sur leur téléphone, appli fermée, comme avec WhatsApp :
+- **versement** enregistré par l'organisateur (« Alice a versé 4 000 FC sur 10 000 FC »), et **cagnotte remise** ;
+- **nouveau message** dans la discussion ;
+- **rappel de cotisation** chaque matin (à 08:00) pour ceux qui n'ont pas fini de payer, à partir du nombre de jours réglé dans « Rappel » (et tant que c'est en retard).
+
+Les relances individuelles des retardataires restent des liens WhatsApp (bouton « Relancer sur WhatsApp »).
+
+**Côté membre :** un bandeau « Activer les notifications » apparaît dans l'onglet Tour (et dans le menu du compte). Sur Android, Chrome suffit ; sur iPhone, l'appli doit d'abord être ajoutée à l'écran d'accueil (iOS 16.4 ou plus). Se déconnecter retire l'appareil des alertes de ce compte.
+
+**Mise en place sur Supabase (une seule fois) :**
+1. **SQL Editor** : relancez `supabase/schema.sql` en entier (il crée la table `push_subscriptions`).
+2. **Clés VAPID** : `npx web-push generate-vapid-keys`. Mettez la clé *publique* dans `vapidPublicKey` de `config.js`.
+3. **Edge Functions → Deploy a new function → Via Editor** : nom **`push`**, collez tout `supabase/functions/push/index.ts`, laissez « Verify JWT » activé, puis Deploy.
+4. **Edge Functions → Secrets** : `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (la clé privée n'est jamais mise dans le dépôt), `VAPID_SUBJECT` (`mailto:votre@adresse`) et `CRON_SECRET` (un long texte au hasard).
+5. **Database → Extensions** : activez `pg_cron` et `pg_net`, puis exécutez `supabase/push-cron.sql` après avoir remplacé les trois valeurs entre `< >`.
+6. Republiez le site (incrémenter `VERSION` dans `sw.js` si un fichier de l'appli a changé).
+
+`npm run test:push` teste la logique de la fonction (droits, textes, rappels, nettoyage des appareils périmés) et un vrai envoi chiffré avec la bibliothèque web-push. Ce test n'exécute pas la fonction sur Supabase : l'envoi réel se vérifie avec deux téléphones.
+
 ## Droits
 
 | | Organisateur | Membre actif | Demandeur |

@@ -48,12 +48,43 @@
     allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [],
     loaded: false, members: [], pending: [], preview: null,
   };
-  const ui = { armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
+  const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
   const isAdmin = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
   const myRow = () => S.user ? S.allMembers.find(m => m.user_id === S.user.id) : null;
   const chatName = () => { const m = myRow(); return m && m.status === 'active' ? m.name : isAdmin() ? 'Organisateur' : ''; };
   const canChat = () => !!S.user && !!chatName();
+
+  // ---------- Push notifications ----------
+  // The server (Edge Function "push") sends the alerts; here the device subscribes and the service worker shows them.
+  const VAPID = (window.LISANGA_CONFIG || {}).vapidPublicKey || '';
+  const pushPossible = () => !!VAPID && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && location.protocol.startsWith('http');
+  const b64ToU8 = b => { const p = '='.repeat((4 - b.length % 4) % 4), r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); };
+  async function currentSub() { const reg = await navigator.serviceWorker.getRegistration(); return reg ? reg.pushManager.getSubscription() : null; }
+  async function refreshPush() {
+    if (!pushPossible()) { ui.push = { supported: false, subscribed: false, permission: 'default' }; return; }
+    let sub = null; try { sub = await currentSub(); } catch (e) {}
+    ui.push = { supported: true, subscribed: !!sub && Notification.permission === 'granted', permission: Notification.permission };
+    render();
+  }
+  async function enablePush() {
+    if (await Notification.requestPermission() !== 'granted') { toast("Notifications refusées. Autorisez-les dans les réglages du navigateur pour ce site."); await refreshPush(); return; }
+    const reg = await navigator.serviceWorker.ready, opts = { userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID) };
+    let sub;
+    try { sub = await reg.pushManager.subscribe(opts); }
+    catch (e) { const old = await reg.pushManager.getSubscription(); if (!old) throw e; await old.unsubscribe(); sub = await reg.pushManager.subscribe(opts); }
+    const j = sub.toJSON();
+    await B.upsert('push_subscriptions', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, 'user_id,endpoint');
+    store.set('lisanga.pushlater', ''); toast('Notifications activées sur cet appareil.');
+    await refreshPush();
+  }
+  async function disablePush() {
+    try {
+      const sub = await currentSub();
+      if (sub) { const endpoint = sub.endpoint; await sub.unsubscribe(); await B.remove('push_subscriptions', { endpoint }); }
+    } catch (e) { /* best effort */ }
+  }
+  const notify = body => { B.invoke('push', body).catch(() => {}); };
 
   // ---------- Data loading ----------
   const normT = t => Object.assign({}, t, { amount: Number(t.amount), penalty: Number(t.penalty) });
@@ -115,6 +146,7 @@
     if (!S.user) { if (unsub) unsub(); unsub = null; Object.assign(S, { tontines: [], tid: null, cfg: null, loaded: false }); route(); return; }
     try { await loadTontines(); pickTontine(); await openTontine(); } catch (e) { toast(friendly(e)); }
     route();
+    if (S.user) refreshPush();
   }
 
   // ---------- Derived ----------
@@ -261,8 +293,10 @@
   // ----- tour -----
   function viewTour(D) {
     const c = S.cfg;
+    const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
+      ? `<div class="remind"><b>Alertes sur ce téléphone</b><br>Soyez prévenu des versements, des messages et des rappels, même appli fermée.<div class="versrow"><button class="mini primary" data-act="pushon">Activer les notifications</button><button class="mini" data-act="pushlater">Plus tard</button></div></div>` : '';
     const header = `<header><p class="eyebrow">Tontine</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
-      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>`;
+      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
     if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? '<button type="button" data-act="undo">Annuler le dernier tour</button>' : ''}</section>`;
     const due = roundDate(c, D.cur), late = dayDiff(due, todayISO()) < 0, pot = c.amount * D.n, got = D.got, pct = Math.min(100, Math.round(100 * got / pot)), miss = D.n - D.paidIds.size;
@@ -278,7 +312,7 @@
         else if (dd <= c.reminder_days) remind = `<div class="remind"><b>Rappel :</b> il vous reste ${money(rest)} à verser, attendu ${esc(rel(due))} (${esc(fmtShort(due))}).</div>`;
       }
     }
-    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
+    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
       + (D.cur > 0 ? '<button class="ghost" data-act="undo">Annuler le tour précédent</button>' : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">${esc(fmtDate(due))} · ${esc(rel(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
@@ -363,13 +397,13 @@
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
       <button class="mini primary" data-act="accept" data-id="${esc(r.id)}">Accepter</button><button class="mini danger" data-act="reject" data-id="${esc(r.id)}">Refuser</button></li>`).join('') : '<li class="hint">Aucune demande pour le moment.</li>'}</ul></div>`;
-    const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
+    const mem = `<div><h3>Membres et ordre de passage</h3><p class="hint" style="margin-top:6px">Les membres déjà servis ne peuvent plus être déplacés. Servi par erreur ? Cliquez sur « Pas encore servi ». Chaque membre cotise à chaque tour, y compris le bénéficiaire.</p>
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
-        const locked = i < D.cur;
+        const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${esc(m.name)}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
-          ${locked ? '<span class="pill done">Servi</span>' : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur ? ' disabled' : ''}>↑</button>
-          <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 ? ' disabled' : ''}>↓</button>
+          ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
+          <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
           <button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}</li>`;
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
@@ -535,6 +569,8 @@
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
+      if (act === 'pushon') { await enablePush(); return; }
+      if (act === 'pushlater') { store.set('lisanga.pushlater', '1'); render(); return; }
       if (act === 'voice') { toggleRec(); return; }
       if (act === 'rmpending') { ui.pending = null; renderPending(); return; }
       if (act === 'exportpdf') { exportPdf(); return; }
@@ -570,6 +606,7 @@
         const add = Math.min(v, c.amount - have); if (add <= 0) { toast('Cette cotisation est déjà complète.'); return; }
         const total = have + add, today = todayISO();
         await B.upsert('payments', Object.assign(eqPay(D.cur, id), { amount: total, paid_on: today, done_on: total >= c.amount ? today : null, log: ((rec && rec.log) || []).slice(-19).concat([{ a: add, at: today }]), penalty_paid: !!(rec && rec.penalty_paid) }), 'tontine_id,round,member_id');
+        notify({ kind: 'payment', tontine_id: S.tid, round: D.cur, member_id: id });
         delete ui.draft['v.' + id]; await loadTable('payments');
         toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(add) + ' enregistré, reste ' + money(c.amount - total) + '.');
       } else if (act === 'unvers') {
@@ -581,12 +618,18 @@
       } else if (act === 'payout') {
         if (ui.armed !== 'payout') { ui.armed = 'payout'; render(); return; }
         ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur, member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
+        notify({ kind: 'payout', tontine_id: S.tid, round: D.cur });
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
       } else if (act === 'undo') {
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('Le tour précédent est de nouveau en cours.');
+      } else if (act === 'unserve') {
+        const i = S.members.findIndex(m => m.id === id); if (i < 0 || !S.out.has(i)) return;
+        if (ui.armed !== 'unserve:' + id) { ui.armed = 'unserve:' + id; render(); return; }
+        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
+        toast(S.members[i].name + " n'est plus marqué comme servi.");
       } else if (act === 'up' || act === 'down') {
         ui.armed = ''; const i = S.members.findIndex(m => m.id === id), j = act === 'up' ? i - 1 : i + 1;
-        if (j < D.cur || j < 0 || j >= D.n) return;
+        if (j < D.cur || j < 0 || j >= D.n || S.out.has(i) || S.out.has(j)) return;
         const a = S.members[i], o = S.members[j], pa = a.position === o.position ? a.position + 1 : a.position;
         await B.update('members', { position: o.position }, { id: a.id }); await B.update('members', { position: pa }, { id: o.id });
         if (a.position === o.position) await B.update('members', { position: o.position }, { id: a.id });
@@ -657,7 +700,7 @@
             const ext = (pend.name.split('.').pop() || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin', path = S.tid + '/' + S.user.id + '/' + rid() + '.' + ext;
             await B.putFile(path, pend.blob, pend.type); att = { path, name: pend.name, type: pend.type, size: pend.size, kind: pend.kind };
           }
-          try { await B.insert('messages', { tontine_id: S.tid, topic_id: ui.topic === 'general' ? null : ui.topic, author_name: n, body: text, att }); }
+          try { const [row] = await B.insert('messages', { tontine_id: S.tid, topic_id: ui.topic === 'general' ? null : ui.topic, author_name: n, body: text, att }); notify({ kind: 'message', message_id: row.id }); }
           catch (e) { if (att) await B.removeFiles([att.path]).catch(() => {}); throw e; }
           $('chatIn').value = ''; ui.pending = null; await loadTable('messages'); renderChatParts();
         } finally { ui.chatBusy = false; const s = $('chatSend'); if (s) s.disabled = false; const i = $('chatIn'); if (i) i.focus(); }
@@ -683,13 +726,16 @@
     const m = $('modal'), body = $('modalBody');
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
+      ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, messages et rappels.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
   });
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal')) $('modal').close(); return; }
     $('modal').close();
-    if (b.dataset.m === 'out') { await B.signOut(); }
+    if (b.dataset.m === 'out') { await disablePush(); await B.signOut(); }
+    else if (b.dataset.m === 'pushon') { try { await enablePush(); } catch (e) { toast('Impossible d\'activer les notifications sur cet appareil.'); } }
+    else if (b.dataset.m === 'pushoff') { await disablePush(); await refreshPush(); toast('Notifications désactivées sur cet appareil.'); }
     else if (b.dataset.m === 'new') go('#/accueil');
     else if (b.dataset.m === 'open') { S.tid = b.dataset.id; S.cfg = S.tontines.find(t => t.id === S.tid); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine(); go('#/tour'); }
   });
