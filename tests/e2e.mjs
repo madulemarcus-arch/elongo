@@ -355,6 +355,7 @@ await A.waitForSelector('text=Cagnotte complète');
 await A.click('[data-act=payout]');
 await A.waitForSelector('[data-act=payout].armed');
 await A.click('[data-act=payout]');
+await A.waitForSelector('.confetti-box .confetti');   // confetti last about 4 seconds: look right away
 await A.waitForSelector('text=Tour 2 sur 4');
 assert.ok((await text(A)).includes('Alice'), 'next beneficiary is Alice');
 await tab(A, 'calendrier');
@@ -379,7 +380,6 @@ if (await A.isEnabled('[data-act=calprev]')) { await A.click('[data-act=calprev]
 else assert.ok(await A.isDisabled('[data-act=calprev]'), 'no month before the first round');
 await Bp.waitForSelector('.toast.show:has-text("Marcus a reçu la cagnotte")');
 await shot(A, '05-calendrier');
-assert.ok(await A.locator('.confetti-box .confetti').count() > 10, 'confetti after the payout');
 // undo previous round, then redo it
 await tab(A, 'tour');
 await A.waitForSelector('.eyebrow:has-text("Bonjour Marcus")');
@@ -677,6 +677,35 @@ await ctx.setOffline(false);
 await A.waitForSelector('#offlineBanner', { state: 'hidden' });
 assert.deepEqual(await dbPay(A, 'Bob'), [], 'the cancelled versement was never sent');
 step('offline: versement kept on the phone, sent when the network is back, cancellable while waiting');
+
+// ---------- Changing who receives the pot ----------
+await tab(A, 'tour');
+await A.waitForSelector('.hero h2:has-text("Alice")');
+await A.click('.hero [data-act=swap]');
+await A.waitForSelector('#modal[open] h2:has-text("Changer le tour de Alice")');
+await A.selectOption('#swapSel', await A.$$eval('#swapSel option', os => os.find(o => /Bob/.test(o.textContent)).value));
+await A.fill('#swapWhy', 'besoin urgent');
+await A.click('#modalBody [data-act=swapdo]');
+await A.waitForSelector('#modalBody h2:has-text("Ordre modifié")');
+const waMsg = decodeURIComponent(await A.getAttribute('#modalBody a.lnk', 'href'));
+assert.ok(waMsg.includes('Bob passe au tour 2') && waMsg.includes('Alice au tour 4') && waMsg.includes('besoin urgent'), 'message for the group: ' + waMsg);
+await shot(A, '13-changer-beneficiaire');
+await A.click('#modal [data-m=close]');
+await A.waitForSelector('.hero h2:has-text("Bob")');
+await tab(A, 'direct');
+await A.waitForSelector('.journal li:has-text("Alice (tour 2) échangé avec Bob (tour 4)"):has-text("besoin urgent")');
+// the new order is shown in the calendar and a member passes his turn
+await tab(A, 'calendrier');
+await A.waitForSelector('.nextrounds .nr.cur:has-text("Bob")');
+await tab(A, 'tour');
+await A.click('.hero [data-act=swap]');
+await A.click('#modalBody [data-act=skipdo]');
+await A.waitForSelector('#modalBody h2:has-text("Ordre modifié")');
+assert.ok((await A.textContent('#modalBody')).includes('Bob passe son tour'));
+await A.click('#modal [data-m=close]');
+await A.waitForSelector('.hero h2:has-text("Chantal")');
+assert.equal(await Bp.locator('[data-act=swap]').count(), 0, 'members cannot change the order');
+step('change the beneficiary: swap, pass the turn, message for the group, journal');
 
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).

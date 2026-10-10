@@ -461,6 +461,7 @@
       }
     }
     const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
+      + `<button type="button" class="ghost" data-act="swap" data-r="${D.cur}">🔀 Changer de bénéficiaire</button>`
       + (D.cur > 0 ? undoBtn(D, 'ghost') : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><p class="when" style="opacity:.75;font-size:.9rem">Tour de ${c.interval_days} jour${c.interval_days > 1 ? 's' : ''}, du ${esc(fmtShort(roundStart(c, D.cur)))} au ${esc(fmtShort(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
@@ -484,6 +485,30 @@
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
           <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
       }).join('') + '</ul></section>';
+  }
+  // Changing who receives the pot: swap two members who are not served yet, or send one to the end of the order.
+  const turnDates = (c, r) => 'du ' + fmtShort(roundStart(c, r)) + ' au ' + fmtShort(roundEnd(c, r));
+  function swapDialog(r) {
+    const c = S.cfg, D = derive(), m = S.members[r];
+    if (!c || !m || r < D.cur || S.out.has(r)) return;
+    const others = S.members.map((x, i) => ({ x, i })).filter(o => o.i !== r && o.i >= D.cur && !S.out.has(o.i));
+    $('modalBody').innerHTML = `<h2>Changer le tour de ${esc(m.name)}</h2><p class="sub">Tour ${r + 1} · ${esc(turnDates(c, r))}</p>
+      ${others.length ? `<h3 style="margin-top:12px">Échanger avec</h3><select id="swapSel" aria-label="Échanger avec">${others.map(o => `<option value="${esc(o.x.id)}">${esc(o.x.name)} (tour ${o.i + 1}, ${esc(turnDates(c, o.i))})</option>`).join('')}</select>` : '<p class="hint">Personne d\'autre à échanger : tous les autres membres ont déjà été servis.</p>'}
+      <label class="f" style="margin-top:10px">Raison (facultatif)<input id="swapWhy" maxlength="80" placeholder="Ex. besoin urgent, voyage"></label>
+      <p class="lock-err" id="swapErr" role="alert"></p>
+      <div class="dlg-actions">${others.length ? `<button class="primary" data-act="swapdo" data-r="${r}">Échanger les deux tours</button>` : ''}${r < S.members.length - 1 ? `<button data-act="skipdo" data-r="${r}">${esc(m.name)} passe son tour (mis à la fin)</button>` : ''}<button data-m="close">Fermer</button></div>`;
+    $('modal').showModal();
+  }
+  // Renumbers every member 1..n in the given order (only the ones whose number changes are written).
+  async function saveOrder(order) {
+    for (let k = 0; k < order.length; k++) if (order[k].position !== k + 1) await B.update('members', { position: k + 1 }, { id: order[k].id });
+    await loadTable('members');
+  }
+  async function turnChanged(r, text, why, wa) {
+    audit(text + (why ? ' (' + why + ')' : ''));
+    const c = S.cfg, D = derive(), b = S.members[D.cur];
+    $('modalBody').innerHTML = `<h2>Ordre modifié</h2><p>${esc(text)}.</p>${b ? `<p class="sub">Bénéficiaire du tour ${D.cur + 1} : <b>${esc(b.name)}</b> (${esc(turnDates(c, D.cur))}).</p>` : ''}
+      <p><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', wa))}">Prévenir le groupe sur WhatsApp</a></p><div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
   }
   // Result of a manual reminder: who was reached, and who must be reminded another way (WhatsApp)
   function remindResultDialog(r) {
@@ -590,7 +615,7 @@
     const list = '<ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row wrap calrow${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
+      return `<li class="row wrap calrow${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${!ov && isAdmin() ? `<button class="mini" data-act="swap" data-r="${r}">🔀 Changer</button>` : ''}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
     }).join('') + '</ul>';
     return `<section class="panel calx"><h2>Calendrier des tours</h2>${nextCards}${calGrid(D)}</section><section class="panel" style="margin-top:14px"><h3>Tous les tours</h3>${list}</section>`;
   }
@@ -1018,6 +1043,25 @@
         audit('Remise du tour ' + (i + 1) + ' à ' + S.members[i].name + ' annulée');
         ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
         toast('La remise à ' + S.members[i].name + ' est annulée : il n\'est plus marqué comme servi.');
+      } else if (act === 'swap') { swapDialog(Number(b.dataset.r)); return;
+      } else if (act === 'swapdo' || act === 'skipdo') {
+        const r = Number(b.dataset.r), m = S.members[r], c = S.cfg, why = ($('swapWhy') ? $('swapWhy').value.trim() : '').slice(0, 80);
+        if (!m || r < D.cur || S.out.has(r)) return;
+        const order = S.members.slice();
+        if (act === 'swapdo') {
+          const j = S.members.findIndex(x => x.id === ($('swapSel') || {}).value);
+          if (j < 0 || j === r || j < D.cur || S.out.has(j)) { $('swapErr').textContent = 'Choisissez avec qui échanger.'; return; }
+          const o = S.members[j]; order[r] = o; order[j] = m;
+          await saveOrder(order);
+          turnChanged(r, m.name + ' (tour ' + (r + 1) + ') échangé avec ' + o.name + ' (tour ' + (j + 1) + ')', why,
+            `Changement dans la tontine « ${c.name} » : ${o.name} passe au tour ${r + 1} (${turnDates(c, r)}) et ${m.name} au tour ${j + 1} (${turnDates(c, j)}).${why ? ' Raison : ' + why + '.' : ''}`);
+        } else {
+          order.splice(r, 1); order.push(m);
+          await saveOrder(order);
+          turnChanged(r, m.name + ' passe son tour (mis à la fin, tour ' + order.length + ')', why,
+            `Changement dans la tontine « ${c.name} » : ${m.name} passe son tour et reçoit la cagnotte en dernier (${turnDates(c, order.length - 1)}). Tous les tours suivants avancent d'une place.${why ? ' Raison : ' + why + '.' : ''}`);
+        }
+        buzz(25); return;
       } else if (act === 'up' || act === 'down') {
         ui.armed = ''; const i = S.members.findIndex(m => m.id === id), j = act === 'up' ? i - 1 : i + 1;
         if (j < D.cur || j < 0 || j >= D.n || S.out.has(i) || S.out.has(j)) return;
