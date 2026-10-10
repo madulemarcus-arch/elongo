@@ -502,6 +502,28 @@ assert.ok(/;Alice;4000;M-Pesa/.test(csv) && /;Alice;6000;Cash à l'organisateur/
 assert.ok((await text(A)).includes('sans compte'), 'hint about members without account');
 step('versements exported as CSV, hint for members without account');
 
+// Themes: automatic -> light -> dark, kept after a reload
+const bodyBg = p => p.evaluate(() => getComputedStyle(document.body).backgroundColor);
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), null, 'automatic by default');
+await A.click('#themeBtn');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light');
+assert.equal(await bodyBg(A), 'rgb(243, 245, 251)', 'light background');
+await A.click('#themeBtn');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark');
+assert.equal(await bodyBg(A), 'rgb(8, 14, 34)', 'dark background');
+await tab(A, 'tour'); await shot(A, '10-sombre-tour');
+await tab(A, 'calendrier'); await shot(A, '10b-sombre-calendrier');
+await tab(A, 'discussion'); await shot(A, '10c-sombre-discussion');
+await A.reload(); await A.waitForSelector('#themeBtn');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'dark theme kept after reload');
+await A.click('#userChip');
+await A.click('#modalBody [data-m="theme:light"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light', 'theme chosen from the account window');
+await A.click('#modalBody [data-m="theme:auto"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), null);
+await A.click('#modal [data-m=close]');
+step('themes: automatic, light, dark, kept after reload');
+
 // ---------- Persistence, install, offline ----------
 await A.reload();
 await A.waitForSelector('a[data-tab=organisateur]');
