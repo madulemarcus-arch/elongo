@@ -16,7 +16,7 @@ const step = n => console.log('✓', n);
 
 // ---------- fake database ----------
 const OWNER = 'u-owner', ALICE = 'u-alice', BOB = 'u-bob', OUTSIDER = 'u-out';
-const T = { id: 't1', name: 'Tontine des amis', owner_id: OWNER, amount: 10000, currency: 'FC', interval_days: 7, start_date: '2026-10-04', reminder_days: 3 };   // round 1 = 4-10 Oct, round 2 = 11-17 Oct
+const T = { id: 't1', name: 'Tontine des amis', owner_id: OWNER, amount: 10000, currency: 'FC', interval_days: 7, start_date: '2026-10-03', reminder_days: 3 };   // round 1 = 3 to 10 Oct, round 2 = 10 to 17 Oct
 const members = [
   { id: 'm0', tontine_id: 't1', name: 'Marcus', user_id: OWNER },
   { id: 'm1', tontine_id: 't1', name: 'Alice', user_id: ALICE },

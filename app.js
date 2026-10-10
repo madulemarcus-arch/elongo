@@ -15,11 +15,12 @@
   const fmtSize = b => b < 1e3 ? b + ' o' : b < 1e6 ? Math.round(b / 1e3) + ' Ko' : (b / 1e6).toFixed(1).replace('.', ',') + ' Mo';
   const num = n => new Intl.NumberFormat('fr-FR').format(n);
   const money = n => num(n) + ' ' + esc(S.cfg ? S.cfg.currency : '');
-  // A round lasts interval_days days: it starts on start_date + round × days and ends the day before the next one starts.
+  // A round lasts interval_days days: from start_date + round × days to that date + days (5 days from the 10th: 10th to 15th).
+  // The next round starts on the day this one ends.
   // The end of the round is its deadline: contributions are due and the pot is handed over by then.
   const plusDays = (iso, n) => { const d = parse(iso); d.setUTCDate(d.getUTCDate() + n); return toISO(d); };
   const roundStart = (c, r) => plusDays(c.start_date, r * c.interval_days);
-  const roundEnd = (c, r) => plusDays(c.start_date, (r + 1) * c.interval_days - 1);
+  const roundEnd = (c, r) => plusDays(c.start_date, (r + 1) * c.interval_days);
   const roundDate = roundEnd;
   function tourPreview(start, days, n) {
     days = Math.round(Number(days));

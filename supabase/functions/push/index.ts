@@ -113,7 +113,7 @@ async function reminders(deps: any) {
     const served = new Set(await deps.payoutRounds(t.id));
     let cur = 0; while (served.has(cur)) cur++;
     if (cur >= members.length) continue;
-    const days = dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days - 1), today);   // the round ends the day before the next one starts
+    const days = dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), today);   // a round of N days ends N days after it starts
     if (days > Number(t.reminder_days)) continue;
     const paid: Map<string, number> = await deps.paymentsOfRound(t.id, cur);
     const price = Number(t.amount);

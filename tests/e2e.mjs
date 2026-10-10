@@ -71,13 +71,13 @@ await A.waitForSelector('#createForm');
 await A.fill(d$('c.name'), 'Tontine des amis');
 await A.fill(d$('c.amount'), '10000');
 await A.fill(d$('c.days'), '7');
-await A.fill(d$('c.start'), daysAgo(8)); // first round: 8 days ago to 2 days ago (7-day rounds): it ended 2 days ago, contributions are late
+await A.fill(d$('c.start'), daysAgo(9)); // first round: 9 days ago to 2 days ago (7-day rounds): it ended 2 days ago, contributions are late
 // the end date of a round is computed and shown as soon as the duration and the start are typed
 const short = iso => new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso + 'T00:00:00Z'));
 const preview = await A.textContent('#prev-c');
-assert.ok(preview.includes('Chaque tour dure 7 jours') && preview.includes(`du ${short(daysAgo(8))} au ${short(daysAgo(2))}`), 'live preview of the end of the round: ' + preview);
+assert.ok(preview.includes('Chaque tour dure 7 jours') && preview.includes(`du ${short(daysAgo(9))} au ${short(daysAgo(2))}`), 'live preview of the end of the round: ' + preview);
 await A.fill(d$('c.days'), '30');
-assert.ok((await A.textContent('#prev-c')).includes(`au ${short(plusDays(daysAgo(8), 29))}`), 'the end date follows the number of days');
+assert.ok((await A.textContent('#prev-c')).includes(`au ${short(plusDays(daysAgo(9), 30))}`), 'the end date follows the number of days');
 await A.fill(d$('c.days'), '7');
 await A.fill(d$('c.me'), 'Marcus');
 await shot(A, '02-creation');
