@@ -1,4 +1,4 @@
--- Lisanga : schéma Supabase (PostgreSQL + Row Level Security + Realtime + Storage).
+-- Elongo : schéma Supabase (PostgreSQL + Row Level Security + Realtime + Storage).
 -- À coller en entier dans Supabase > SQL Editor, puis « Run ». Le script peut être relancé sans danger.
 --
 -- Rôles :
