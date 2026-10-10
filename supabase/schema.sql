@@ -91,6 +91,17 @@ create table if not exists public.messages (
 );
 create index if not exists messages_tontine_idx on public.messages (tontine_id, created_at);
 
+-- Appareils qui reçoivent les notifications push (un par téléphone ou navigateur et par compte).
+-- Chaque utilisateur ne voit et ne gère que les siens ; la fonction « push » les lit avec la clé de service.
+create table if not exists public.push_subscriptions (
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  endpoint    text not null,
+  p256dh      text not null,
+  auth        text not null,
+  created_at  timestamptz not null default now(),
+  primary key (user_id, endpoint)
+);
+
 -- ---------- Fonctions d'appartenance (security definer : évitent la récursion des politiques) ----------
 create or replace function public.is_owner(t uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -128,12 +139,13 @@ alter table public.payments enable row level security;
 alter table public.payouts  enable row level security;
 alter table public.topics   enable row level security;
 alter table public.messages enable row level security;
+alter table public.push_subscriptions enable row level security;
 
 do $$
 declare r record;
 begin  -- repart de zéro pour que le script reste rejouable
   for r in select schemaname, tablename, policyname from pg_policies
-           where schemaname = 'public' and tablename in ('tontines','members','contacts','payments','payouts','topics','messages')
+           where schemaname = 'public' and tablename in ('tontines','members','contacts','payments','payouts','topics','messages','push_subscriptions')
   loop execute format('drop policy %I on %I.%I', r.policyname, r.schemaname, r.tablename); end loop;
 end $$;
 
@@ -178,6 +190,9 @@ create policy messages_insert on public.messages for insert to authenticated
 create policy messages_delete on public.messages for delete to authenticated
   using (author_id = auth.uid() or public.is_owner(tontine_id));
 
+create policy push_own on public.push_subscriptions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
 -- ---------- Inscription par code (le demandeur n'a pas le droit d'écrire dans members) ----------
 create or replace function public.tontine_preview(p_code text)
 returns table (name text, join_open boolean)
@@ -208,7 +223,7 @@ grant execute on function public.is_owner(uuid), public.is_active(uuid), public.
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.tontines, public.members, public.contacts, public.payments,
-  public.payouts, public.topics, public.messages to authenticated;
+  public.payouts, public.topics, public.messages, public.push_subscriptions to authenticated;
 
 -- ---------- Temps réel ----------
 -- replica identity full : les événements DELETE portent alors tontine_id et passent le filtre côté client.

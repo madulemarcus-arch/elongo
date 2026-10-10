@@ -8,9 +8,12 @@
     "start": "npx http-server -c-1 -p 8080 .",
     "test": "node tests/e2e.mjs",
     "test:sql": "sh tests/rls.sh",
+    "test:push": "node tests/push.mjs",
     "icons": "node tests/icons.mjs"
   },
   "devDependencies": {
-    "playwright": "^1.56.1"
+    "http_ece": "^1.2.1",
+    "playwright": "^1.56.1",
+    "web-push": "^3.6.7"
   }
 }

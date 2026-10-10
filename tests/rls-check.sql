@@ -92,6 +92,19 @@ select pg_temp.zero('intrus: versements', $$select count(*)::int from payments$$
 select pg_temp.zero('intrus: messages', $$select count(*)::int from messages$$);
 select pg_temp.fails('intrus: écrire un message', format('insert into messages (tontine_id, author_name, body) values (%L, ''X'', ''y'')', current_setting('app.t')));
 
+-- push subscriptions: private to their owner
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+insert into push_subscriptions (endpoint, p256dh, auth) values ('https://push.example/b', 'k', 'a') returning endpoint;
+select pg_temp.check('abonnement push créé pour soi', (select count(*) from push_subscriptions) = 1);
+select pg_temp.fails('abonnement push au nom d''un autre', $$insert into push_subscriptions (user_id, endpoint, p256dh, auth) values ('00000000-0000-0000-0000-00000000000a', 'https://push.example/x', 'k', 'a')$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.zero('abonnement push invisible pour les autres (même l''organisateur)', $$select count(*)::int from push_subscriptions$$);
+select pg_temp.zero('abonnement push non supprimable par un autre', $$with d as (delete from push_subscriptions returning 1) select count(*)::int from d$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.check('l''abonnement est toujours là', (select count(*) from push_subscriptions) = 1);
+delete from push_subscriptions;
+select pg_temp.zero('abonnement push supprimé par son propriétaire', $$select count(*)::int from push_subscriptions$$);
+
 -- closing registrations blocks new requests
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 update tontines set join_open = false;

@@ -11,6 +11,7 @@ Elongo : PWA de suivi de tontine, données partagées en direct via Supabase. Ja
 - `npm start` : sert le dossier sur http://localhost:8080.
 - `npm test` : `tests/e2e.mjs`, scénario séquentiel à deux onglets (organisateur + membre) en mode démo (le serveur de test renvoie une `config.js` vide, quel que soit son contenu). En cas d'échec il affiche l'état de chaque onglet. Playwright doit être résolvable (`npm i`).
 - `npm run test:sql` : applique `schema.sql` deux fois sur un PostgreSQL local jetable et exécute `tests/rls-check.sql` (droits de chaque rôle).
+- `npm run test:push` : `tests/push.mjs`, teste la logique de la fonction push (`supabase/functions/push/index.ts`) avec une base factice, et un vrai envoi web-push déchiffré comme le ferait un navigateur. Nécessite Node 22.18 ou plus (lecture du TypeScript).
 - `npm run icons` : régénère `icons/*.png` depuis le SVG de `tests/icons.mjs`.
 
 ## Architecture
@@ -20,12 +21,14 @@ Elongo : PWA de suivi de tontine, données partagées en direct via Supabase. Ja
 - Modèle : `payments` = un cumul par (tour, membre) avec `log` des versements ; `payouts` = remise d'un tour ; le tour courant est le premier sans remise. Les tours sont datés `start_date + tour × interval_days`. Sujet « Général » = `topic_id` nul.
 - Pièces jointes : bucket privé `lisanga` (nom technique gardé de l'ancien nom du projet : ne pas le renommer sans migrer le stockage), chemin `<tontine>/<user>/<fichier>`, message → `att {path,name,type,size,kind}`.
 
+- **Notifications push** : l'appli (`enablePush`/`disablePush`) enregistre l'appareil dans `push_subscriptions` ; après un versement, une remise ou un message, `notify()` appelle la Edge Function `push` (`B.invoke`), qui recompose le texte depuis la base (le client n'envoie jamais de texte libre), vérifie les droits (organisateur pour versements et remises, auteur pour un message) et envoie avec web-push. Les rappels quotidiens viennent de pg_cron (`supabase/push-cron.sql`). `sw.js` affiche la notification (rien si l'appli est au premier plan) et ouvre le bon onglet au clic. Le texte des notifications est dans `index.ts` ; les clés VAPID privées ne vont jamais dans le dépôt.
+
 ## Points d'attention
 
 - Toute donnée saisie injectée dans le HTML passe par `esc()`.
 - Après modification d'un fichier listé dans `ASSETS` de `sw.js`, incrémenter `VERSION`.
 - Changer le schéma : modifier `schema.sql` (rejouable), `demoBackend`, et ajouter un cas dans `tests/rls-check.sql`.
-- L'adaptateur Supabase n'a jamais tourné contre un vrai projet depuis ce dépôt.
+- L'adaptateur Supabase est vérifié en réel pour la connexion, l'inscription et la création de tontine ; le partage en direct, les fichiers et l'envoi des notifications push se vérifient avec deux téléphones (rien de tout cela ne peut tourner dans l'environnement de développement, sans accès réseau à Supabase).
 
 ## Conventions
 

@@ -41,6 +41,8 @@
     B.upsert = async (table, row, onConflict) => unwrap(await sb.from(table).upsert(row, { onConflict }).select());
     B.remove = async (table, eq) => unwrap(await filtered(sb.from(table).delete(), eq).select());
     B.rpc = async (name, args) => unwrap(await sb.rpc(name, args));
+    // Edge Function call (push notifications). Failures never block the app.
+    B.invoke = async (name, body) => { try { const r = await sb.functions.invoke(name, { body }); return r.data || null; } catch (e) { return null; } };
     // cb(table) fires on any change of that table for this tontine, and cb('*') after a reconnection.
     B.subscribe = (tid, cb) => {
       const ch = sb.channel('lisanga-' + tid + '-' + Math.random().toString(36).slice(2, 6));
@@ -78,13 +80,14 @@
     // pending requesters only see themselves.
     const visible = (d, t, r) => {
       if (!B.user) return false;
+      if (t === 'push_subscriptions') return r.user_id === B.user.id;
       const id = tid(t, r), own = isOwner(d, id), mem = T(d, 'members').find(m => m.tontine_id === id && m.user_id === B.user.id);
       if (t === 'contacts') return own;
       if (t === 'tontines') return own || !!mem;
       if (t === 'members') return own || (mem && mem.status === 'active') || r.user_id === B.user.id;
       return own || (mem && mem.status === 'active');
     };
-    const pk = { payments: ['tontine_id', 'round', 'member_id'], payouts: ['tontine_id', 'round'], contacts: ['member_id'] };
+    const pk = { payments: ['tontine_id', 'round', 'member_id'], payouts: ['tontine_id', 'round'], contacts: ['member_id'], push_subscriptions: ['user_id', 'endpoint'] };
     const sameKey = (t, a, b) => (pk[t] || ['id']).every(k => a[k] === b[k]);
     const now = () => new Date().toISOString();
     // New row = column defaults of schema.sql, overridden by the given values.
@@ -94,7 +97,8 @@
         : t === 'topics' ? { id: uuid(), author_id: must(), created_at: now(), closed: false }
         : t === 'messages' ? { id: uuid(), author_id: must(), created_at: now(), topic_id: null, body: '', att: null }
         : t === 'payments' ? { penalty_paid: false, done_on: null, log: [], updated_at: now() }
-        : t === 'payouts' ? { created_at: now() } : {};
+        : t === 'payouts' ? { created_at: now() }
+        : t === 'push_subscriptions' ? { user_id: must(), created_at: now() } : {};
       return Object.assign(base, row);
     };
     const denied = () => err('new row violates row-level security policy', '42501');
@@ -160,7 +164,7 @@
       must(); const d = load(), gone = [];
       d[t] = T(d, t).filter(r => {
         if (!match(r, eq) || !visible(d, t, r)) return true;
-        const ok = t === 'members' ? isOwner(d, r.tontine_id) || (r.user_id === B.user.id && r.status === 'pending')
+        const ok = t === 'push_subscriptions' ? r.user_id === B.user.id : t === 'members' ? isOwner(d, r.tontine_id) || (r.user_id === B.user.id && r.status === 'pending')
           : t === 'topics' || t === 'messages' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : isOwner(d, tid(t, r));
         if (ok) gone.push(r); return !ok;
       });
@@ -183,6 +187,7 @@
       }
       throw err('unknown rpc ' + name);
     };
+    B.invoke = async () => null;   // no server in demo mode: nobody to notify
     B.subscribe = (id, cb) => { const s = { tid: id, cb }; subs.add(s); return () => subs.delete(s); };
     B.putFile = async (path, blob) => {
       const url = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(blob); });
