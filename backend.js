@@ -74,7 +74,9 @@
     const copy = x => JSON.parse(JSON.stringify(x));
     const notify = (t, id) => { subs.forEach(s => { if (s.tid === id) s.cb(t); }); if (bc) bc.postMessage({ t, id }); };
     if (bc) bc.onmessage = e => subs.forEach(s => { if (s.tid === e.data.id) s.cb(e.data.t); });
-    const isOwner = (d, id) => !!B.user && T(d, 'tontines').some(x => x.id === id && x.owner_id === B.user.id);
+    const isCreator = (d, id) => !!B.user && T(d, 'tontines').some(x => x.id === id && x.owner_id === B.user.id);
+    // organizer = creator or active member named organizer (rules of schema.sql: is_owner / is_creator / guard_organizers)
+    const isOwner = (d, id) => isCreator(d, id) || (!!B.user && T(d, 'members').some(m => m.tontine_id === id && m.user_id === B.user.id && m.status === 'active' && m.is_organizer));
     const isActive = (d, id) => isOwner(d, id) || T(d, 'members').some(m => m.tontine_id === id && m.user_id === B.user.id && m.status === 'active');
     // Reading rules copied from schema.sql so the demo behaves like the real thing for the screens: phones are for the organizer only,
     // pending requesters only see themselves.
@@ -93,7 +95,7 @@
     // New row = column defaults of schema.sql, overridden by the given values.
     const finish = (t, row) => {
       const base = t === 'tontines' ? { id: uuid(), owner_id: must(), currency: 'FC', interval_days: 30, penalty: 0, reminder_days: 3, country_code: '243', join_open: true, code: Math.random().toString(36).slice(2, 10), created_at: now() }
-        : t === 'members' ? { id: uuid(), position: 0, status: 'active', user_id: null, created_at: now() }
+        : t === 'members' ? { id: uuid(), position: 0, status: 'active', user_id: null, is_organizer: false, created_at: now() }
         : t === 'topics' ? { id: uuid(), author_id: must(), created_at: now(), closed: false }
         : t === 'messages' ? { id: uuid(), author_id: must(), created_at: now(), topic_id: null, body: '', att: null }
         : t === 'payments' ? { penalty_paid: false, done_on: null, log: [], updated_at: now() }
@@ -147,9 +149,14 @@
     B.update = async (t, patch, eq) => {
       must(); const d = load(), out = [];
       if (t === 'tontines' && patch.amount !== undefined && !(patch.amount > 0)) throw err('amount check', '23514');
+      if (t === 'tontines' && patch.owner_id !== undefined) throw err('owner_locked');
       T(d, t).forEach(r => {
         if (!match(r, eq) || !visible(d, t, r)) return;
         const allowed = t === 'topics' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : t === 'messages' ? false : isOwner(d, tid(t, r));
+        if (allowed && t === 'members' && patch.is_organizer !== undefined && patch.is_organizer !== !!r.is_organizer) {
+          if (!isCreator(d, r.tontine_id)) throw err('creator_only');
+          if (patch.is_organizer && (!r.user_id || (patch.status || r.status) !== 'active')) throw err('organizer_needs_account');
+        }
         if (allowed) { Object.assign(r, patch); out.push(r); }
       });
       save(d); out.forEach(r => notify(t, tid(t, r))); return copy(out);
@@ -164,7 +171,7 @@
       must(); const d = load(), gone = [];
       d[t] = T(d, t).filter(r => {
         if (!match(r, eq) || !visible(d, t, r)) return true;
-        const ok = t === 'push_subscriptions' ? r.user_id === B.user.id : t === 'members' ? isOwner(d, r.tontine_id) || (r.user_id === B.user.id && r.status === 'pending')
+        const ok = t === 'push_subscriptions' ? r.user_id === B.user.id : t === 'tontines' ? isCreator(d, r.id) : t === 'members' ? (r.is_organizer ? isCreator(d, r.tontine_id) : isOwner(d, r.tontine_id)) || (r.user_id === B.user.id && r.status === 'pending')
           : t === 'topics' || t === 'messages' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : isOwner(d, tid(t, r));
         if (ok) gone.push(r); return !ok;
       });

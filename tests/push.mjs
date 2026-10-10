@@ -31,6 +31,7 @@ const deps = () => ({
   today: () => state.today,
   userIdFromToken: async tok => ({ 'tok-owner': OWNER, 'tok-alice': ALICE, 'tok-bob': BOB })[tok] || null,
   getTontine: async id => (id === 't1' ? T : null),
+  isOrganizer: async (t, uid) => t.owner_id === uid || uid === BOB,   // Bob is a co-organizer
   getMember: async id => members.find(m => m.id === id) || null,
   getPayment: async (t, r, m) => state.payments.find(p => p.round === r && p.member_id === m) || null,
   getPayout: async (t, r) => state.payouts.find(p => p.round === r) || null,
@@ -67,7 +68,11 @@ step('access rules');
 reset();
 state.payments.push({ round: 0, member_id: 'm1', amount: 4000 });
 assert.equal((await j(await call({ kind: 'payment', tontine_id: 't1', round: 0, member_id: 'm1' }, { token: 'tok-alice' }))).status, 403, 'a member cannot announce payments');
-let r = await j(await call({ kind: 'payment', tontine_id: 't1', round: 0, member_id: 'm1' }, { token: 'tok-owner' }));
+let r;
+r = await j(await call({ kind: 'payment', tontine_id: 't1', round: 0, member_id: 'm1' }, { token: 'tok-bob' }));
+assert.deepEqual([r.status, r.failed], [200, 0], 'a co-organizer announces payments too');
+state.sent.length = 0;
+r = await j(await call({ kind: 'payment', tontine_id: 't1', round: 0, member_id: 'm1' }, { token: 'tok-owner' }));
 assert.deepEqual([r.status, r.sent, r.failed], [200, 3, 0]);
 assert.deepEqual(to(), ['e-alice', 'e-alice-2', 'e-bob'], 'everyone but the organizer who acted, every device, nobody outside the group');
 assert.equal(state.sent[0].title, 'Tontine des amis');
