@@ -369,6 +369,40 @@
   }
 
   // ----- calendar -----
+  // Date on which every member had paid a round in full (null while someone is missing): the calendar ticks the days from then until the planned end.
+  function roundDone(c, r, rows) {
+    if (!S.members.length) return null;
+    let last = '';
+    for (const m of S.members) {
+      let sum = 0, on = null;
+      rows.forEach(x => { if (x.round === r && x.id === m.id) { sum += x.a; if (on === null && sum >= c.amount) on = x.at; } });
+      if (on === null) return null;
+      if (on > last) last = on;
+    }
+    return last || roundStart(c, r);
+  }
+  // Report of one day: what was paid that day, and who has paid (or not) in the rounds concerned.
+  function dayDialog(iso) {
+    const c = S.cfg, D = derive(), today = todayISO(), rows = paymentRows(), eff = iso < today ? iso : today;
+    const roundIdx = Math.floor(dayDiff(iso, c.start_date) / c.interval_days);
+    const ends = []; for (let k = 0; k < D.n; k++) if (roundEnd(c, k) === iso) ends.push(k);
+    const paidToday = rows.filter(x => x.at === iso);
+    const shown = [...new Set([...ends, ...paidToday.map(x => x.round), ...(roundIdx >= 0 && roundIdx < D.n ? [roundIdx] : [])])].sort((x, y) => x - y);   // ended that day, paid that day, running that day
+    const day = `<h3 style="margin-top:14px">Versements enregistrés ce jour</h3>` + (paidToday.length ? '<ul class="list">' + paidToday.map(x => `<li class="row"><div class="grow"><div class="name">${esc(x.name)}</div><div class="sub">Tour ${x.round + 1} · ${esc(methodName(x.m))}</div></div><div class="num">${money(x.a)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement enregistré ce jour.</p>');
+    const blocks = shown.map(k => {
+      const ben = S.members[k], start = roundStart(c, k), end = roundEnd(c, k), out = S.out.get(k), done = roundDone(c, k, rows);
+      let head = `<h3 style="margin-top:14px">Tour ${k + 1} · ${esc(ben ? ben.name : '')}</h3><p class="sub">Du ${esc(fmtShort(start))} au ${esc(fmtShort(end))}</p>`;
+      if (ends.includes(k)) head += `<p><b>Jour de remise</b> · ${out ? `cagnotte remise à ${esc(ben.name)}${out.paid_on ? ' le ' + esc(fmtShort(out.paid_on)) : ''}` : iso <= today ? 'cagnotte pas encore remise' : 'remise prévue ce jour-là'}</p>`;
+      if (done) head += `<p class="okline">✓ Cagnotte complète${done < end ? ` depuis le ${esc(fmtShort(done))}, avant la date prévue (${esc(fmtShort(end))})` : ''}</p>`;
+      if (eff < start) return head + '<p class="hint">Ce tour n\'a pas encore commencé.</p>';
+      const st = S.members.map(m => { const cum = rows.reduce((t, x) => t + (x.round === k && x.id === m.id && x.at <= eff ? x.a : 0), 0); return { m, cum, full: cum >= c.amount }; });
+      const nFull = st.filter(x => x.full).length, nPart = st.filter(x => !x.full && x.cum > 0).length, nNone = st.length - nFull - nPart;
+      return head + `<p class="hint">${iso > today ? 'Jour à venir : situation à ce jour' : 'Situation à la fin de ce jour'} · ${nFull} complet${nFull > 1 ? 's' : ''}, ${nPart} partiel${nPart > 1 ? 's' : ''}, ${nNone} sans versement</p><ul class="list">` + st.map(x => `<li class="row"><div class="grow name">${esc(x.m.name)}</div>${x.full ? '<span class="pill ok">Complet</span>' : x.cum > 0 ? `<span class="pill now">Partiel</span><span class="sub num">${money(x.cum)} / ${money(c.amount)}</span>` : '<span class="pill warn">Non versé</span>'}</li>`).join('') + '</ul>';
+    }).join('');
+    $('modalBody').innerHTML = `<h2>${esc(fmtDate(iso))}</h2>${shown.length ? '' : '<p class="sub">Aucun tour ce jour-là.</p>'}${blocks}${day}<div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
+    $('modal').showModal();
+  }
+
   // Month grid: every day of a round is tinted, the day a round ends (the payout day) carries a badge "T<n>", and the next rounds are listed below.
   const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   const monthKey = iso => iso.slice(0, 7);
@@ -379,31 +413,37 @@
     const y = +key.slice(0, 4), m0 = +key.slice(5, 7) - 1, lead = (new Date(Date.UTC(y, m0, 1)).getUTCDay() + 6) % 7, days = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
     const roundOf = iso => { const k = Math.floor(dayDiff(iso, c.start_date) / c.interval_days); return k >= 0 && k < D.n ? k : -1; };
     const endsOn = new Map(); for (let r = 0; r < D.n; r++) endsOn.set(roundEnd(c, r), r);
+    const rows = paymentRows(), doneOn = []; for (let r = 0; r < D.n; r++) doneOn.push(roundDone(c, r, rows));
+    const hasPay = new Set(rows.map(x => x.at));
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<div class="cd out" aria-hidden="true"></div>');
     for (let d = 1; d <= days; d++) {
       const iso = key + '-' + pad(d), r = roundOf(iso), e = endsOn.get(iso), cls = ['cd'];
       if (r >= 0) { cls.push('r' + (r % 3)); if (S.out.has(r)) cls.push('served'); else if (r === D.cur) cls.push('cur'); }
       if (iso === today) cls.push('today');
+      const ticked = r >= 0 && doneOn[r] !== null && iso >= doneOn[r]; if (ticked) cls.push('paid');
+      if (hasPay.has(iso)) cls.push('haspay');
       let label = d + ' ' + MONTHS[m0];
       if (r >= 0) label += ', tour ' + (r + 1) + ' de ' + (S.members[r] ? S.members[r].name : '');
+      if (ticked) label += ', cagnotte complète';
       let badge = '';
       if (e !== undefined) { cls.push('end'); const got = S.out.has(e); badge = `<b class="cb${got ? ' got' : ''}">${got ? '✓' : ''}T${e + 1}</b>`; label += ', remise du tour ' + (e + 1) + (S.members[e] ? ' à ' + S.members[e].name : '') + (got ? ' (faite)' : ''); }
-      cells.push(`<div class="${cls.join(' ')}" title="${esc(label)}" aria-label="${esc(label)}"><span>${d}</span>${badge}</div>`);
+      cells.push(`<button type="button" class="${cls.join(' ')}" data-act="calday" data-date="${iso}" title="${esc(label)} : voir le rapport du jour" aria-label="${esc(label)} : voir le rapport du jour"><span>${d}${ticked ? ' <i class="tk">✓</i>' : ''}</span>${badge}</button>`);
     }
     const nav = (act, dis, txt, aria) => `<button type="button" class="mini" data-act="${act}" aria-label="${aria}"${dis ? ' disabled' : ''}>${txt}</button>`;
     return `<div class="calhead">${nav('calprev', key <= first, '‹', 'Mois précédent')}<h3>${MONTHS[m0]} ${y}</h3>${nav('calnext', key >= last, '›', 'Mois suivant')}${key === monthKey(today) ? '' : '<button type="button" class="mini" data-act="caltoday">Aujourd\'hui</button>'}</div>
       <div class="calgrid" role="group" aria-label="Calendrier de ${MONTHS[m0]} ${y}">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(w => `<div class="cw" aria-hidden="true">${w}</div>`).join('')}${cells.join('')}</div>
-      <p class="calkey"><span><i class="k cur"></i>Tour en cours</span><span><i class="k r0"></i>Tours à venir</span><span><i class="k served"></i>Remise faite</span><span><b class="cb">T2</b>Jour de remise</span></p>`;
+      <p class="hint" style="margin:10px 0 0">Touchez un jour pour voir son rapport : qui a versé et qui n'a pas versé.</p>
+      <p class="calkey"><span><i class="tk">✓</i>Tour entièrement payé</span><span><i class="k cur"></i>Tour en cours</span><span><i class="k r0"></i>Tours à venir</span><span><i class="k served"></i>Remise faite</span><span><b class="cb">T2</b>Jour de remise</span></p>`;
   }
   function viewCal(D) {
     const c = S.cfg, me = myRow();
     if (!D.n) return '<section class="panel"><h2>Calendrier des tours</h2><p class="empty">Le calendrier apparaîtra quand les membres seront ajoutés.</p></section>';
-    const next = [];
+    const next = [], allRows = paymentRows();
     for (let r = D.cur; r < D.n && next.length < 3; r++) next.push(r);
     const nextCards = next.length ? `<div class="nextrounds"><h3>${D.cur < D.n ? 'Prochains tours' : ''}</h3>${next.map(r => {
       const m = S.members[r], end = roundEnd(c, r), cur = r === D.cur;
-      return `<div class="nr${cur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><div class="nrn num">T${r + 1}</div><div class="grow"><div class="name">${esc(m.name)}${me && m.id === me.id ? ' (vous)' : ''}</div><div class="sub">Du <b>${esc(fmtShort(roundStart(c, r)))}</b> au <b>${esc(fmtShort(end))}</b> · remise ${esc(rel(end))}</div></div><span class="pill ${cur ? 'now' : ''}">${cur ? 'En cours' : 'À venir'}</span></div>`;
+      return `<div class="nr${cur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><div class="nrn num">T${r + 1}</div><div class="grow"><div class="name">${esc(m.name)}${me && m.id === me.id ? ' (vous)' : ''}</div><div class="sub">Du <b>${esc(fmtShort(roundStart(c, r)))}</b> au <b>${esc(fmtShort(end))}</b> · remise ${esc(rel(end))}${roundDone(c, r, allRows) !== null ? ' · <b class="okline">✓ cagnotte complète</b>' : ''}</div></div><span class="pill ${cur ? 'now' : ''}">${cur ? 'En cours' : 'À venir'}</span></div>`;
     }).join('')}</div>` : '';
     const list = '<ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
@@ -685,6 +725,7 @@
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
+      if (act === 'calday') { dayDialog(b.dataset.date); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }

@@ -323,6 +323,14 @@ assert.deepEqual((await A.locator('.panel:has(h3:has-text("Tous les tours")) li 
 assert.ok(await A.locator('.calgrid .cb').count() >= 1, 'payout day badges in the month grid');
 assert.ok((await A.textContent('.nextrounds')).includes('Prochains tours'), 'next rounds card');
 assert.equal(await A.locator('.cd.today').count(), 1, 'today is marked');
+// clicking a day opens its report: who paid, who did not
+await A.click('.cd.today');
+await A.waitForSelector('#modalBody:has-text("Versements enregistrés ce jour")');
+const rep = await A.textContent('#modalBody');
+assert.ok(rep.includes('M-Pesa') && rep.includes('Alice'), 'the report lists the payments of the day with their method: ' + rep);
+assert.ok(rep.includes('Complet') && rep.includes('Non versé'), 'the report says who has paid and who has not');
+await shot(A, '05b-rapport-aujourdhui');
+await A.click('#modalBody [data-m=close]');
 const monthNow = (await A.textContent('.calhead h3')).trim();
 if (await A.isEnabled('[data-act=calprev]')) { await A.click('[data-act=calprev]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() !== m, monthNow); await A.click('[data-act=caltoday]'); await A.waitForFunction(m => document.querySelector('.calhead h3').textContent.trim() === m, monthNow); }
 else assert.ok(await A.isDisabled('[data-act=calprev]'), 'no month before the first round');
@@ -514,6 +522,27 @@ await A.fill('#authForm input[name=password]', 'secret123');
 await A.click('#authForm button.primary');
 await A.waitForSelector('a[data-tab=organisateur]');
 step('sign-out / wrong password / sign-in');
+
+// A round paid in full before its end date is ticked from that day until the planned end
+await A.evaluate(day => {
+  const k = 'lisanga.demo.v1', d = JSON.parse(localStorage.getItem(k)), t = d.tontines[0];
+  d.members.filter(m => m.tontine_id === t.id && m.status === 'active').forEach(m => d.payments.push({ tontine_id: t.id, round: 3, member_id: m.id, amount: t.amount, paid_on: day, done_on: day, penalty_paid: false, log: [{ a: t.amount, at: day, m: 'mpesa' }], updated_at: new Date().toISOString() }));
+  localStorage.setItem(k, JSON.stringify(d));
+}, daysAgo(0));
+await A.reload();
+await A.waitForSelector('a[data-tab=calendrier]');
+await tab(A, 'calendrier');
+await A.waitForSelector('.nextrounds');
+assert.ok((await A.textContent('.nextrounds')).includes('cagnotte complète'), 'next rounds card shows the round already paid in full');
+for (let i = 0; i < 3 && !(await A.locator('.cd.paid').count()); i++) await A.click('[data-act=calnext]');
+assert.ok(await A.locator('.cd.paid .tk').count() >= 1, 'days of the round paid early are ticked');
+await shot(A, '05c-calendrier-coche');
+await A.locator('.cd.paid').first().click();
+await A.waitForSelector('#modalBody:has-text("Cagnotte complète")');
+await shot(A, '05d-rapport-jour');
+assert.ok((await A.textContent('#modalBody')).includes('avant la date prévue'), 'the report says it was paid before the planned date');
+await A.click('#modalBody [data-m=close]');
+step('calendar: day report, round paid early ticked until the planned end');
 
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).
