@@ -369,14 +369,48 @@
   }
 
   // ----- calendar -----
+  // Month grid: every day of a round is tinted, the day a round ends (the payout day) carries a badge "T<n>", and the next rounds are listed below.
+  const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const monthKey = iso => iso.slice(0, 7);
+  const shiftMonth = (key, n) => { const d = new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1 + n, 1)); return toISO(d).slice(0, 7); };
+  function calGrid(D) {
+    const c = S.cfg, today = todayISO(), first = monthKey(c.start_date), last = monthKey(roundEnd(c, D.n - 1));
+    let key = ui.calMonth || monthKey(today); if (key < first) key = first; if (key > last) key = last; ui.calMonth = key;
+    const y = +key.slice(0, 4), m0 = +key.slice(5, 7) - 1, lead = (new Date(Date.UTC(y, m0, 1)).getUTCDay() + 6) % 7, days = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
+    const roundOf = iso => { const k = Math.floor(dayDiff(iso, c.start_date) / c.interval_days); return k >= 0 && k < D.n ? k : -1; };
+    const endsOn = new Map(); for (let r = 0; r < D.n; r++) endsOn.set(roundEnd(c, r), r);
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<div class="cd out" aria-hidden="true"></div>');
+    for (let d = 1; d <= days; d++) {
+      const iso = key + '-' + pad(d), r = roundOf(iso), e = endsOn.get(iso), cls = ['cd'];
+      if (r >= 0) { cls.push('r' + (r % 3)); if (S.out.has(r)) cls.push('served'); else if (r === D.cur) cls.push('cur'); }
+      if (iso === today) cls.push('today');
+      let label = d + ' ' + MONTHS[m0];
+      if (r >= 0) label += ', tour ' + (r + 1) + ' de ' + (S.members[r] ? S.members[r].name : '');
+      let badge = '';
+      if (e !== undefined) { cls.push('end'); const got = S.out.has(e); badge = `<b class="cb${got ? ' got' : ''}">${got ? '✓' : ''}T${e + 1}</b>`; label += ', remise du tour ' + (e + 1) + (S.members[e] ? ' à ' + S.members[e].name : '') + (got ? ' (faite)' : ''); }
+      cells.push(`<div class="${cls.join(' ')}" title="${esc(label)}" aria-label="${esc(label)}"><span>${d}</span>${badge}</div>`);
+    }
+    const nav = (act, dis, txt, aria) => `<button type="button" class="mini" data-act="${act}" aria-label="${aria}"${dis ? ' disabled' : ''}>${txt}</button>`;
+    return `<div class="calhead">${nav('calprev', key <= first, '‹', 'Mois précédent')}<h3>${MONTHS[m0]} ${y}</h3>${nav('calnext', key >= last, '›', 'Mois suivant')}${key === monthKey(today) ? '' : '<button type="button" class="mini" data-act="caltoday">Aujourd\'hui</button>'}</div>
+      <div class="calgrid" role="group" aria-label="Calendrier de ${MONTHS[m0]} ${y}">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(w => `<div class="cw" aria-hidden="true">${w}</div>`).join('')}${cells.join('')}</div>
+      <p class="calkey"><span><i class="k cur"></i>Tour en cours</span><span><i class="k r0"></i>Tours à venir</span><span><i class="k served"></i>Remise faite</span><span><b class="cb">T2</b>Jour de remise</span></p>`;
+  }
   function viewCal(D) {
     const c = S.cfg, me = myRow();
     if (!D.n) return '<section class="panel"><h2>Calendrier des tours</h2><p class="empty">Le calendrier apparaîtra quand les membres seront ajoutés.</p></section>';
-    return '<section class="panel"><h2>Calendrier des tours</h2><ul class="list">' + S.members.map((m, r) => {
+    const next = [];
+    for (let r = D.cur; r < D.n && next.length < 3; r++) next.push(r);
+    const nextCards = next.length ? `<div class="nextrounds"><h3>${D.cur < D.n ? 'Prochains tours' : ''}</h3>${next.map(r => {
+      const m = S.members[r], end = roundEnd(c, r), cur = r === D.cur;
+      return `<div class="nr${cur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><div class="nrn num">T${r + 1}</div><div class="grow"><div class="name">${esc(m.name)}${me && m.id === me.id ? ' (vous)' : ''}</div><div class="sub">Du <b>${esc(fmtShort(roundStart(c, r)))}</b> au <b>${esc(fmtShort(end))}</b> · remise ${esc(rel(end))}</div></div><span class="pill ${cur ? 'now' : ''}">${cur ? 'En cours' : 'À venir'}</span></div>`;
+    }).join('')}</div>` : '';
+    const list = '<ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
-    }).join('') + '</ul></section>';
+      return `<li class="row wrap calrow${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
+    }).join('') + '</ul>';
+    return `<section class="panel calx"><h2>Calendrier des tours</h2>${nextCards}${calGrid(D)}</section><section class="panel" style="margin-top:14px"><h3>Tous les tours</h3>${list}</section>`;
   }
 
   // ----- live matrix -----
@@ -649,6 +683,8 @@
     try {
       if (act === 'authmode') { ui.authMode = b.dataset.mode; render(); return; }
       if (act === 'back') { go('#/tour'); return; }
+      if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
+      if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
