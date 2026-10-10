@@ -95,6 +95,17 @@ create index if not exists messages_tontine_idx on public.messages (tontine_id, 
 
 -- Appareils qui reçoivent les notifications push (un par téléphone ou navigateur et par compte).
 -- Chaque utilisateur ne voit et ne gère que les siens ; la fonction « push » les lit avec la clé de service.
+-- Journal des opérations : écrit par les organisateurs, lu par tous les membres actifs, jamais modifiable ni supprimable (seulement par suppression de la tontine).
+create table if not exists public.journal (
+  id          uuid primary key default gen_random_uuid(),
+  tontine_id  uuid not null references public.tontines(id) on delete cascade,
+  by_id       uuid not null default auth.uid(),
+  by_name     text not null check (char_length(by_name) between 1 and 60),
+  text        text not null check (char_length(text) between 1 and 300),
+  created_at  timestamptz not null default now()
+);
+create index if not exists journal_tontine_idx on public.journal (tontine_id, created_at desc);
+
 create table if not exists public.push_subscriptions (
   user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   endpoint    text not null,
@@ -150,12 +161,13 @@ alter table public.payouts  enable row level security;
 alter table public.topics   enable row level security;
 alter table public.messages enable row level security;
 alter table public.push_subscriptions enable row level security;
+alter table public.journal enable row level security;
 
 do $$
 declare r record;
 begin  -- repart de zéro pour que le script reste rejouable
   for r in select schemaname, tablename, policyname from pg_policies
-           where schemaname = 'public' and tablename in ('tontines','members','contacts','payments','payouts','topics','messages','push_subscriptions')
+           where schemaname = 'public' and tablename in ('tontines','members','contacts','payments','payouts','topics','messages','push_subscriptions','journal')
   loop execute format('drop policy %I on %I.%I', r.policyname, r.schemaname, r.tablename); end loop;
 end $$;
 
@@ -199,6 +211,9 @@ create policy messages_insert on public.messages for insert to authenticated
   with check (public.is_active(tontine_id) and author_id = auth.uid() and public.topic_open(topic_id, tontine_id));
 create policy messages_delete on public.messages for delete to authenticated
   using (author_id = auth.uid() or public.is_owner(tontine_id));
+
+create policy journal_select on public.journal for select to authenticated using (public.is_active(tontine_id));
+create policy journal_insert on public.journal for insert to authenticated with check (public.is_owner(tontine_id) and by_id = auth.uid());
 
 create policy push_own on public.push_subscriptions for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -259,6 +274,8 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.tontines, public.members, public.contacts, public.payments,
   public.payouts, public.topics, public.messages, public.push_subscriptions to authenticated;
 
+grant select, insert on public.journal to authenticated;
+
 -- ---------- Temps réel ----------
 -- replica identity full : les événements DELETE portent alors tontine_id et passent le filtre côté client.
 alter table public.members  replica identity full;
@@ -268,12 +285,13 @@ alter table public.payouts  replica identity full;
 alter table public.topics   replica identity full;
 alter table public.messages replica identity full;
 alter table public.tontines replica identity full;
+alter table public.journal  replica identity full;
 
 do $$
 declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    foreach t in array array['tontines','members','contacts','payments','payouts','topics','messages'] loop
+    foreach t in array array['tontines','members','contacts','payments','payouts','topics','messages','journal'] loop
       begin execute format('alter publication supabase_realtime add table public.%I', t);
       exception when duplicate_object then null; end;
     end loop;

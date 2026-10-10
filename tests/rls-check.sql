@@ -158,3 +158,16 @@ update members set user_id = '00000000-0000-0000-0000-00000000000d' where name =
 select pg_temp.check('la ligne d''Alice est reliée au compte', (select count(*) from members where name = 'Alice' and user_id = '00000000-0000-0000-0000-00000000000d' and status = 'active') = 1);
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
 select pg_temp.check('le compte relié voit la tontine', (select count(*) from tontines) = 1);
+
+-- journal: organizers write, active members read, nobody edits or deletes
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+insert into journal (tontine_id, by_name, text) values (current_setting('app.t')::uuid, 'Orga', 'Versement de 4 000 FC enregistré pour Alice');
+select pg_temp.fails('journal: auteur imposé', format('insert into journal (tontine_id, by_id, by_name, text) values (%L, %L, ''Orga'', ''x'')', current_setting('app.t'), '00000000-0000-0000-0000-00000000000b'));
+select pg_temp.fails('journal: pas de modification', $$update journal set text = 'autre'$$);
+select pg_temp.fails('journal: pas de suppression', $$delete from journal$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.check('journal: un membre actif le lit', (select count(*) from journal) = 1);
+select pg_temp.fails('journal: un membre simple n''écrit pas', format('insert into journal (tontine_id, by_name, text) values (%L, ''Bob'', ''faux'')', current_setting('app.t')));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+select pg_temp.zero('journal: un intrus ne le lit pas', $$select count(*)::int from journal$$);
