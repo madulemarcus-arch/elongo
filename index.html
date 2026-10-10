@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lisanga</title>
+<meta name="description" content="Lisanga : suivi d'une tontine en direct entre les membres du groupe.">
+<meta name="theme-color" content="#0b6b5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar" id="topbar" hidden>
+  <div class="brand"><img src="icons/icon-192.png" alt="" width="30" height="30"><span>Lisanga</span></div>
+  <span class="live-dot" id="liveDot" title="Données en direct" hidden></span>
+  <button class="user-chip" id="userChip" type="button" aria-haspopup="dialog"></button>
+</header>
+
+<div class="demo-banner" id="demoBanner" hidden>Mode démo : aucun serveur n'est configuré, les données restent sur cet appareil (voir README).</div>
+
+<main id="view" tabindex="-1"><p class="empty">Chargement…</p></main>
+
+<nav class="tabbar" id="tabbar" hidden>
+  <a href="#/tour" data-tab="tour"><span aria-hidden="true">🪙</span>Tour</a>
+  <a href="#/calendrier" data-tab="calendrier"><span aria-hidden="true">📅</span>Calendrier</a>
+  <a href="#/direct" data-tab="direct"><span aria-hidden="true">📈</span>Direct</a>
+  <a href="#/discussion" data-tab="discussion"><span aria-hidden="true">💬</span>Discussion<b class="badge" id="chatBadge" hidden></b></a>
+  <a href="#/organisateur" data-tab="organisateur" data-role="orga"><span aria-hidden="true">⚙️</span>Organisateur<b class="badge" id="reqBadge" hidden></b></a>
+</nav>
+
+<dialog id="modal"><div id="modalBody"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="backend.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
