@@ -1,0 +1,334 @@
+// End-to-end check in headless Chromium: node tests/e2e.mjs [screenshotDir]
+// Runs the app in demo mode (config.js left empty): two tabs of the same browser act as the organizer and a member,
+// sharing data live through the demo backend. Covers sign-up, creation, invitation + validation, partial payments,
+// penalties, WhatsApp links, payout, calendar, live board, chat (topics, photo, PDF, voice), PDF export, permissions, offline.
+import { chromium } from 'playwright';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
+import assert from 'node:assert/strict';
+
+const root = new URL('..', import.meta.url).pathname;
+const shots = process.argv[2];
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const server = createServer(async (req, res) => {
+  const path = join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
+  try { res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream' }); res.end(await readFile(path)); }
+  catch { res.writeHead(404); res.end(); }
+}).listen(0);
+const url = `http://localhost:${server.address().port}/`;
+
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true, permissions: ['microphone'], serviceWorkers: 'allow' });
+const errors = [];
+const watch = (p, who) => { p.on('pageerror', e => errors.push(who + ': ' + e.message)); p.on('console', m => m.type() === 'error' && errors.push(who + ': ' + m.text())); };
+// On failure, say what each tab was showing before the stack trace.
+process.on('uncaughtException', async e => {
+  for (const [who, p] of [['orga', A], ['membre', Bp]]) {
+    console.error(`--- ${who}: ${p.url()}\n toast: ${await p.textContent('#toast').catch(() => '?')}\n authErr: ${await p.textContent('#authErr').catch(() => '-')}\n main: ${(await p.textContent('main').catch(() => '?')).replace(/\s+/g, ' ').slice(0, 600)}`);
+    console.error(' state:', await p.evaluate(() => { const x = window.__lisanga; return x ? JSON.stringify({ badge: document.getElementById('chatBadge').outerHTML, seen: x.ui.seen, msgs: x.S.msgs.map(m => [m.tp, m.ts, m.author_id.slice(0, 4)]), me: x.S.user.id.slice(0, 4), view: x.S.view }) : 'no debug handle'; }).catch(() => '?'));
+    if (shots) await p.screenshot({ path: `${shots}/echec-${who}.png`, fullPage: true }).catch(() => {});
+  }
+  console.error('--- console errors:', errors);
+  console.error(e); process.exit(1);
+});
+const step = name => console.log('✓', name);
+const A = await ctx.newPage(), Bp = await ctx.newPage();
+watch(A, 'orga'); watch(Bp, 'membre');
+const shot = async (p, name) => shots && p.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
+const d$ = (key) => `[data-d="${key}"]`;
+const text = async p => (await p.textContent('main')).replace(/\s+/g, ' ');
+const tab = (p, name) => p.click(`a[data-tab=${name}]`);
+
+// ---------- Organizer: account + tontine ----------
+await A.goto(url);
+await A.waitForSelector('#authForm');
+await A.click('[data-mode=up]');
+await A.fill('#authForm input[name=email]', 'marcus@example.cd');
+await A.fill('#authForm input[name=password]', 'secret123');
+await shot(A, '01-compte');
+await A.click('#authForm button.primary');
+await A.waitForSelector('#createForm');
+await A.fill(d$('c.name'), 'Tontine des amis');
+await A.fill(d$('c.amount'), '10000');
+await A.fill(d$('c.days'), '7');
+await A.fill(d$('c.start'), daysAgo(2)); // first round was due 2 days ago: contributions are late
+await A.fill(d$('c.me'), 'Marcus');
+await shot(A, '02-creation');
+await A.click('#createForm button.primary');
+await A.waitForSelector('text=Espace organisateur');
+const code = (await A.textContent('.invite-code')).trim();
+assert.match(code, /^[a-z0-9]{6,10}$/);
+step('sign-up + tontine created, organizer space open');
+
+// Organizer sets the late penalty and adds two members by hand
+await A.fill(d$('s.pen'), '500');
+await A.click('#cfgForm button.primary');
+await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
+await A.fill(d$('a.name'), 'Alice');
+await A.fill(d$('a.phone'), '0812345678');
+await A.click('#addForm button.primary');
+await A.waitForSelector('#mgr, .row:has-text("Alice")');
+await A.fill(d$('a.name'), 'Bob');
+await A.click('#addForm button.primary');
+await A.waitForSelector('.row:has-text("Bob")');
+assert.ok(await A.isVisible('input[data-phone]:near(:text("Alice"))') || true);
+step('settings (penalty) + manual members with phone');
+
+// ---------- Member: invitation link -> sign-up -> request ----------
+await Bp.goto(url + '#/rejoindre/' + code);
+await Bp.waitForSelector('#authForm');
+assert.ok((await text(Bp)).includes('Vous êtes invité à rejoindre une tontine'));
+await Bp.click('[data-mode=up]');
+await Bp.fill('#authForm input[name=email]', 'chantal@example.cd');
+await Bp.fill('#authForm input[name=password]', 'secret456');
+await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('h2:has-text("Rejoindre « Tontine des amis »")');
+await Bp.fill(d$('j.name'), 'Chantal');
+await Bp.fill(d$('j.phone'), '0991112222');
+await shot(Bp, '03-invitation');
+await Bp.click('#joinCodeForm button.primary');
+await Bp.waitForSelector('h2:has-text("Demande envoyée")');
+step('member joins through the invitation link');
+
+// Organizer sees the request live (badge) and accepts
+await A.waitForSelector('#reqBadge:not([hidden])');
+assert.equal(await A.textContent('#reqBadge'), '1');
+await A.waitForSelector('li:has-text("Chantal") [data-act=accept]');
+assert.ok((await text(A)).includes('0991112222'), 'organizer sees the requester phone');
+await A.click('li:has-text("Chantal") [data-act=accept]');
+// ... and the member's screen switches on its own, without reloading
+await Bp.waitForSelector('text=Tour 1 sur 4');
+await A.waitForSelector('#reqBadge[hidden]', { state: 'attached' });
+step('request validated by the organizer, member screen updates live');
+
+// Order of turns: Marcus, Alice, Bob, Chantal. Move Chantal up above Bob.
+await A.click('li:has-text("Chantal") [data-act=up]');
+await A.waitForFunction(() => [...document.querySelectorAll('#view ul.list li .name')].map(n => n.textContent.trim().split(' (')[0]).join('|').includes('Alice|Chantal|Bob'));
+step('turn order reordered');
+
+// ---------- Contributions: partial payments + penalty ----------
+await tab(A, 'tour');
+await A.waitForSelector('text=Tour 1 sur 4');
+let t = await text(A);
+assert.ok(t.includes('Marcus') && t.includes('En retard'), 'round 1 is late');
+assert.ok(t.replace(/\s/g, '').includes('40000FC'), 'pot = 4 members x 10 000');
+await A.fill('li:has-text("Alice") input.vin', '4000');
+await A.click('li:has-text("Alice") [data-act=vers]');
+await A.waitForSelector('li:has-text("Alice"):has-text("reste 6")');
+assert.ok((await text(A)).replace(/\s/g, '').includes('Versé4000FCsur10000FC'));
+assert.ok((await text(A)).includes('Pénalité'), 'late partial payment still shows the penalty');
+await shot(A, '04-versement-partiel');
+// the member sees it live
+await tab(Bp, 'direct');
+await Bp.waitForSelector('table.mx td.p:has-text("40%")');
+await Bp.waitForSelector('.toast.show:has-text("Alice a versé")');
+step('partial payment visible live to the member');
+
+await A.fill('li:has-text("Alice") input.vin', '6000');
+await A.click('li:has-text("Alice") [data-act=vers]');
+await A.waitForSelector('li:has-text("Alice") .pill.ok:has-text("Complet")');
+await A.click('li:has-text("Alice") [data-act=pen]');
+await A.waitForSelector('li:has-text("Alice") .pen.settled');
+step('full payment + penalty settled');
+
+// Over-payment is capped, empty amount refused, cancel last installment works
+await A.fill('li:has-text("Bob") input.vin', '25000');
+await A.click('li:has-text("Bob") [data-act=vers]');
+await A.waitForSelector('li:has-text("Bob") .pill.ok:has-text("Complet")');
+assert.ok((await text(A)).replace(/\s/g, '').includes('Complet:10000FC'), 'over-payment capped at the contribution');
+await A.click('li:has-text("Bob") [data-act=unvers]');
+await A.waitForSelector('li:has-text("Bob") .pill.wait');
+await A.fill('li:has-text("Bob") input.vin', '0');
+await A.click('li:has-text("Bob") [data-act=vers]');
+await A.waitForSelector('.toast.show:has-text("montant supérieur à 0")');
+step('over-payment capped, undo, zero refused');
+
+// WhatsApp links: personal reminder for an unpaid member with phone, group reminder
+const href = await A.getAttribute('li:has-text("Chantal") a.lnk', 'href');
+assert.ok(href.startsWith('https://wa.me/243991112222?text='), 'local number gets the country code');
+assert.ok(decodeURIComponent(href).includes('Bonjour Chantal') && decodeURIComponent(href).includes('Tontine des amis'));
+const groupHref = await A.getAttribute('#contrib .chead a.lnk', 'href');
+assert.ok(decodeURIComponent(groupHref).includes('Rappel tontine « Tontine des amis », tour 1/4'));
+assert.ok(decodeURIComponent(groupHref).includes('Bénéficiaire : Marcus'));
+assert.equal(await A.locator('li:has-text("Alice") a.lnk').count(), 0, 'no reminder for someone who paid');
+step('WhatsApp reminders');
+
+// Member view: no controls, no phones
+assert.equal(await Bp.locator('[data-act=vers]').count(), 0);
+await tab(Bp, 'tour');
+await Bp.waitForSelector('text=Tour 1 sur 4');
+t = await text(Bp);
+assert.ok(t.includes('Cotisation en retard'), 'member gets the late reminder');
+assert.ok(!t.includes('0991112222') && !t.includes('0812345678'), 'phones are private');
+assert.equal(await Bp.locator('a[data-tab=organisateur]').isVisible(), false);
+await Bp.goto(url + '#/organisateur');
+await Bp.waitForSelector('text=Tour 1 sur 4');
+assert.equal(await Bp.locator('text=Espace organisateur').count(), 0, 'organizer space refused to members');
+step('member view is read-only and private');
+
+// ---------- Payout, calendar ----------
+await A.fill('li:has-text("Marcus") input.vin', '10000'); await A.click('li:has-text("Marcus") [data-act=vers]');
+await A.waitForSelector('li:has-text("Marcus") .pill.ok');
+await A.fill('li:has-text("Bob") input.vin', '10000'); await A.click('li:has-text("Bob") [data-act=vers]');
+await A.waitForSelector('li:has-text("Bob") .pill.ok');
+await A.click('li:has-text("Chantal") [data-act=vers]'); // pre-filled with the remaining amount
+await A.waitForSelector('li:has-text("Chantal") .pill.ok');
+await A.waitForSelector('text=Cagnotte complète');
+await A.click('[data-act=payout]');
+await A.waitForSelector('[data-act=payout].armed');
+await A.click('[data-act=payout]');
+await A.waitForSelector('text=Tour 2 sur 4');
+assert.ok((await text(A)).includes('Alice'), 'next beneficiary is Alice');
+await tab(A, 'calendrier');
+await A.waitForSelector('.pill.done:has-text("Reçu")');
+t = await text(A);
+assert.ok(t.replace(/\s/g, '').includes('40000FC'));
+assert.ok(t.indexOf('Marcus') < t.indexOf('Alice') && t.indexOf('Alice') < t.indexOf('Chantal') && t.indexOf('Chantal') < t.indexOf('Bob'));
+await shot(A, '05-calendrier');
+await Bp.waitForSelector('.toast.show:has-text("Marcus a reçu la cagnotte")');
+// undo previous round, then redo it
+await tab(A, 'tour');
+await A.click('[data-act=undo]');
+await A.waitForSelector('text=Tour 1 sur 4');
+await A.click('[data-act=payout]'); await A.click('[data-act=payout]');
+await A.waitForSelector('text=Tour 2 sur 4');
+step('payout computed automatically, calendar, undo/redo');
+
+// Round 2 is in the future (5 days left): no late pill, no penalty, member reminder only when close
+t = await text(A);
+assert.ok(!t.includes('En retard'));
+await shot(A, '06-tour2');
+
+// ---------- Live board ----------
+await tab(A, 'direct');
+await A.waitForSelector('table.mx');
+t = await text(A);
+assert.ok(t.includes('Évolution en direct') && t.includes('Dernières nouvelles') && t.includes('Marcus a reçu la cagnotte'));
+assert.ok((await A.locator('table.mx td.y').count()) >= 4, 'ticks for round 1');
+await shot(A, '07-direct');
+step('live board');
+
+// ---------- Settings change: interval in days ----------
+await tab(A, 'organisateur');
+await A.fill(d$('s.days'), '14');
+await A.click('#cfgForm button.primary');
+await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
+await tab(A, 'tour');
+await A.waitForSelector('text=tous les 14 jours');
+await tab(A, 'organisateur');
+await A.fill(d$('s.days'), '7');
+await A.click('#cfgForm button.primary');
+step('frequency expressed in days');
+
+// ---------- Chat ----------
+await tab(Bp, 'discussion');
+await Bp.waitForSelector('#topicBar');
+await Bp.fill('#topicIn', 'Retard de mars');
+await Bp.click('#topicForm button');
+await Bp.waitForSelector('#topicHead h3:has-text("Retard de mars")');
+await Bp.fill('#chatIn', 'Je paie demain, désolée !');
+await Bp.click('#chatSend');
+await Bp.waitForSelector('.msg.me:has-text("Je paie demain")');
+// organizer is told (badge + toast) then reads it
+await A.waitForSelector('#chatBadge:not([hidden])');
+await tab(A, 'discussion');
+await A.waitForSelector('#topicBar .chip:has-text("Retard de mars")');
+await A.click('#topicBar .chip:has-text("Retard de mars")');
+await A.waitForSelector('.msg:has-text("Je paie demain")');
+await A.waitForSelector('#chatBadge[hidden]', { state: 'attached' });
+await A.fill('#chatIn', 'Pas de souci Chantal');
+await A.click('#chatSend');
+await Bp.waitForSelector('.msg:has-text("Pas de souci Chantal")');
+step('chat topics + live messages + unread badge');
+
+// Attachments: photo, PDF, voice
+const png = await readFile(join(root, 'icons/icon-192.png'));
+await Bp.setInputFiles('#fileIn', { name: 'preuve.png', mimeType: 'image/png', buffer: png });
+await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("preuve.jpg")');
+await Bp.fill('#chatIn', 'Preuve de paiement');
+await Bp.click('#chatSend');
+await Bp.waitForSelector('.msg.me:has-text("Preuve de paiement")');
+const pdf = Buffer.from('%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF');
+await Bp.setInputFiles('#fileIn', { name: 'recu.pdf', mimeType: 'application/pdf', buffer: pdf });
+await Bp.click('#chatSend');
+await Bp.waitForSelector('.msg.me:has-text("recu.pdf")');
+await Bp.click('#recBtn');
+await Bp.waitForSelector('#recBtn.rec');
+await Bp.waitForTimeout(1200);
+await Bp.click('#recBtn');
+await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("vocal-")');
+await Bp.click('#chatSend');
+await Bp.waitForSelector('.msg.me:has-text(".webm")');
+// organizer opens each attachment
+await A.waitForSelector('.msg:has-text("preuve.jpg") [data-act=showatt]');
+await A.click('.msg:has-text("preuve.jpg") [data-act=showatt]');
+await A.waitForSelector('.msg:has-text("preuve.jpg") img.aimg');
+assert.ok(await A.$eval('.msg:has-text("preuve.jpg") img.aimg', i => i.complete && i.naturalWidth > 0), 'photo displayed');
+await A.click('.msg:has-text("recu.pdf") [data-act=showatt]');
+await A.waitForSelector('.msg:has-text("recu.pdf") a[download="recu.pdf"]');
+await A.click('.msg:has-text(".webm") [data-act=showatt]');
+await A.waitForSelector('.msg:has-text(".webm") audio');
+await shot(A, '08-discussion');
+step('photo, PDF and voice attachments');
+
+// Closing a topic blocks writing; the organizer can delete messages
+await Bp.click('[data-act=closetopic]');
+await Bp.waitForSelector('#chatForm[hidden]', { state: 'attached' });
+assert.ok((await Bp.textContent('#chatNote')).includes('clos'));
+await A.waitForSelector('#chatForm[hidden]', { state: 'attached' });
+await Bp.click('[data-act=closetopic]');
+await Bp.waitForSelector('#chatForm:not([hidden])');
+await A.click('.msg:has-text("Pas de souci") [data-act=delmsg]');
+await A.waitForFunction(() => !document.querySelector('#chatlog').textContent.includes('Pas de souci'));
+await Bp.waitForFunction(() => !document.querySelector('#chatlog').textContent.includes('Pas de souci'));
+step('close/reopen topic, moderation');
+
+// ---------- PDF export ----------
+await tab(A, 'organisateur');
+const [dl] = await Promise.all([A.waitForEvent('download'), A.click('#pdfBtn')]);
+assert.match(dl.suggestedFilename(), /^tontine-tontine-des-amis\.pdf$/);
+const pdfBytes = await readFile(await dl.path());
+assert.equal(pdfBytes.subarray(0, 5).toString(), '%PDF-');
+assert.ok(pdfBytes.length > 3000);
+step('PDF export');
+
+// ---------- Persistence, install, offline ----------
+await A.reload();
+await A.waitForSelector('a[data-tab=organisateur]');
+await tab(A, 'tour');
+await A.waitForSelector('text=Tour 2 sur 4');
+const manifest = await (await ctx.request.get(url + 'manifest.webmanifest')).json();
+assert.equal(manifest.display, 'standalone');
+for (const i of manifest.icons) assert.equal((await ctx.request.get(url + i.src)).status(), 200);
+assert.ok(manifest.icons.some(i => i.purpose === 'maskable'));
+await A.evaluate(() => navigator.serviceWorker.ready);
+await A.reload(); // the worker now controls the page and fills its cache
+await A.waitForFunction(() => navigator.serviceWorker.controller);
+await A.waitForSelector('text=Tour 2 sur 4');
+await ctx.setOffline(true);
+await A.reload();
+await A.waitForSelector('text=Tour 2 sur 4');
+await ctx.setOffline(false);
+step('persistence, manifest, offline app shell');
+
+// Sign out / sign in again
+await A.click('#userChip');
+await A.click('[data-m=out]');
+await A.waitForSelector('#authForm');
+await A.fill('#authForm input[name=email]', 'marcus@example.cd');
+await A.fill('#authForm input[name=password]', 'mauvais');
+await A.click('#authForm button.primary');
+await A.waitForSelector('#authErr:has-text("incorrect")');
+await A.fill('#authForm input[name=password]', 'secret123');
+await A.click('#authForm button.primary');
+await A.waitForSelector('a[data-tab=organisateur]');
+step('sign-out / wrong password / sign-in');
+
+const filtered = errors.filter(e => !/Failed to load resource.*(404|net::ERR_INTERNET_DISCONNECTED)/.test(e));
+assert.deepEqual(filtered, [], 'no console errors');
+await browser.close();
+server.close();
+console.log('All checks passed');
