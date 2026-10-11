@@ -87,13 +87,15 @@
     if (d.startsWith('00')) d = d.slice(2); else if (d.startsWith('0')) d = '243' + d.slice(1);
     return d.length >= 8 ? d + PHONE_DOMAIN : '';
   }
+  // Supabase refuses passwords under 6 characters (a project setting): a shorter one is completed with a fixed suffix before it is sent.
+  const authPw = p => p.length < 6 ? p + '#elongo' : p;
   const shownId = e => String(e || '').endsWith(PHONE_DOMAIN) ? '+' + e.slice(0, -PHONE_DOMAIN.length) : e;
   function friendly(e) {
     const m = String((e && e.message) || ''), c = e && e.code;
     if (/Invalid login credentials/i.test(m)) return 'Numéro ou mot de passe incorrect.';
     if (/already registered/i.test(m)) return 'Un compte existe déjà avec cet identifiant. Connectez-vous.';
     if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par message), puis connectez-vous.";
-    if (/at least \d+ characters/i.test(m)) return 'Le mot de passe doit avoir au moins 6 caractères.';
+    if (/at least \d+ characters/i.test(m)) return 'Le mot de passe doit avoir au moins 4 caractères.';
     if (/invalid.*email|email.*invalid/i.test(m)) return 'Numéro de téléphone invalide.';
     if (/rate limit/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes.';
     if (m === 'invalid_code') return "Code d'invitation inconnu.";
@@ -409,7 +411,7 @@
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
       <form id="authForm"><label class="f">Numéro de téléphone<input type="text" name="email" required autocomplete="tel" inputmode="tel" autocapitalize="none" spellcheck="false" placeholder="Ex. 0812345678"></label>
-      <label class="f">Mot de passe${up ? ' (6 caractères minimum, à retenir)' : ''}<span class="pw"><input type="password" name="password" required minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      <label class="f">Mot de passe${up ? ' (4 caractères minimum, à retenir)' : ''}<span class="pw"><input type="password" name="password" required minlength="4" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form></section>`;
   }
   const createForm = () => `<section class="panel"><h2>Créer ma tontine</h2><form id="createForm" class="grid">
@@ -1157,7 +1159,7 @@
     const f = ev.target; ev.preventDefault();
     try {
       if (f.id === 'authForm') {
-        const email = loginId(f.email.value), password = f.password.value, err = $('authErr'); err.textContent = '';
+        const email = loginId(f.email.value), password = authPw(f.password.value), err = $('authErr'); err.textContent = '';
         if (!email) { err.textContent = 'Entrez votre numéro de téléphone (ex. 0812345678).'; return; }
         const btn = f.querySelector('button.primary'), label = btn.textContent, slow = setTimeout(() => { err.textContent = 'La connexion est lente, patientez un instant…'; }, 6000);
         if (btn.disabled) return;

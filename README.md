@@ -4,6 +4,7 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 
 ## Fonctionnalités
 
+- **Mot de passe** de 4 caractères minimum (Supabase en demande 6 : l'appli complète automatiquement les mots de passe plus courts, sans rien changer pour l'utilisateur).
 - **Comptes** (numéro de téléphone + mot de passe, sans adresse e-mail ; les comptes créés avec un e-mail avant restent utilisables en tapant cet e-mail). Celui qui crée la tontine en est l'organisateur.
 - **Réglages du groupe** : nom, cotisation, monnaie, **durée d'un tour en jours** et début du premier tour (la date de fin de chaque tour est calculée et affichée tout de suite : « Tour 1 : du 2 oct. au 8 oct. »), pénalité de retard, rappel (jours avant la fin du tour), indicatif pays pour WhatsApp, ouverture des inscriptions.
 - **Membres et ordre de passage** : ajout à la main, montée/descente, retrait ; les membres déjà servis sont verrouillés.

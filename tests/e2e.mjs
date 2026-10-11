@@ -329,7 +329,7 @@ const Cp = await ctx.newPage();
 await Cp.goto(url + '#/rejoindre/' + code);
 await Cp.waitForSelector('#authForm');
 await Cp.fill('#authForm input[name=email]', 'david@example.cd');
-await Cp.fill('#authForm input[name=password]', 'secret789');
+await Cp.fill('#authForm input[name=password]', '1234');   // 4 characters are enough
 await Cp.click('#authForm button.primary');
 await Cp.waitForSelector('h2:has-text("Rejoindre « Tontine des amis »")');
 await Cp.fill(d$('j.name'), 'David');
