@@ -43,18 +43,19 @@
   const lastMethod = () => { const v = store.get('lisanga.lastmethod'); return METHODS[v] ? v : ''; };
   const methodSelect = (id, sel) => `<select class="msel" data-d="m.${esc(id)}" aria-label="Moyen de paiement"><option value="">Moyen de paiement…</option>${METHOD_GROUPS.map(([label, keys]) => `<optgroup label="${esc(label)}">${keys.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(METHODS[k])}</option>`).join('')}</optgroup>`).join('')}</select>`;
 
-  // ----- theme: automatic (follows the phone), light or dark; the choice is kept on this device -----
-  const THEMES = ['auto', 'light', 'dark'], THEME_NAMES = { auto: 'automatique', light: 'clair', dark: 'sombre' };
+  // ----- theme: automatic (follows the phone), light, dark or black; the choice is kept on this device -----
+  const THEMES = ['auto', 'light', 'dark', 'black'], THEME_NAMES = { auto: 'automatique', light: 'clair', dark: 'sombre', black: 'noir' };
   const THEME_ICONS = {
     auto: '<path d="M12 3a9 9 0 1 0 0 18z" fill="currentColor"/><circle cx="12" cy="12" r="9"/>',
     light: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>',
-    dark: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>' };
+    dark: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+    black: '<circle cx="12" cy="12" r="9" fill="currentColor"/>' };
   const getTheme = () => { const v = store.get('elongo.theme'); return THEMES.includes(v) ? v : 'auto'; };
   function applyTheme() {
     const t = getTheme(), r = document.documentElement;
     if (t === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', t);
-    const dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches), meta = document.querySelector('meta[name=theme-color]');
-    if (meta) meta.setAttribute('content', dark ? '#0b1640' : '#13255b');
+    const dark = t === 'dark' || t === 'black' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches), meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.setAttribute('content', t === 'black' ? '#000000' : dark ? '#0b1640' : '#13255b');
     const b = $('themeBtn'); if (b) {
       b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${THEME_ICONS[t]}</svg>`;
       b.setAttribute('aria-label', 'Thème : ' + THEME_NAMES[t] + '. Appuyez pour changer.'); b.title = 'Thème : ' + THEME_NAMES[t];
@@ -87,13 +88,15 @@
     if (d.startsWith('00')) d = d.slice(2); else if (d.startsWith('0')) d = '243' + d.slice(1);
     return d.length >= 8 ? d + PHONE_DOMAIN : '';
   }
+  // Supabase refuses passwords under 6 characters (a project setting): a shorter one is completed with a fixed suffix before it is sent.
+  const authPw = p => p.length < 6 ? p + '#elongo' : p;
   const shownId = e => String(e || '').endsWith(PHONE_DOMAIN) ? '+' + e.slice(0, -PHONE_DOMAIN.length) : e;
   function friendly(e) {
     const m = String((e && e.message) || ''), c = e && e.code;
     if (/Invalid login credentials/i.test(m)) return 'Numéro ou mot de passe incorrect.';
     if (/already registered/i.test(m)) return 'Un compte existe déjà avec cet identifiant. Connectez-vous.';
     if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par message), puis connectez-vous.";
-    if (/at least \d+ characters/i.test(m)) return 'Le mot de passe doit avoir au moins 6 caractères.';
+    if (/at least \d+ characters/i.test(m)) return 'Le mot de passe doit avoir au moins 4 caractères.';
     if (/invalid.*email|email.*invalid/i.test(m)) return 'Numéro de téléphone invalide.';
     if (/rate limit/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes.';
     if (m === 'invalid_code') return "Code d'invitation inconnu.";
@@ -409,7 +412,7 @@
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
       <form id="authForm"><label class="f">Numéro de téléphone<input type="text" name="email" required autocomplete="tel" inputmode="tel" autocapitalize="none" spellcheck="false" placeholder="Ex. 0812345678"></label>
-      <label class="f">Mot de passe${up ? ' (6 caractères minimum, à retenir)' : ''}<span class="pw"><input type="password" name="password" required minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      <label class="f">Mot de passe${up ? ' (4 caractères minimum, à retenir)' : ''}<span class="pw"><input type="password" name="password" required minlength="4" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form></section>`;
   }
   const createForm = () => `<section class="panel"><h2>Créer ma tontine</h2><form id="createForm" class="grid">
@@ -1157,7 +1160,7 @@
     const f = ev.target; ev.preventDefault();
     try {
       if (f.id === 'authForm') {
-        const email = loginId(f.email.value), password = f.password.value, err = $('authErr'); err.textContent = '';
+        const email = loginId(f.email.value), password = authPw(f.password.value), err = $('authErr'); err.textContent = '';
         if (!email) { err.textContent = 'Entrez votre numéro de téléphone (ex. 0812345678).'; return; }
         const btn = f.querySelector('button.primary'), label = btn.textContent, slow = setTimeout(() => { err.textContent = 'La connexion est lente, patientez un instant…'; }, 6000);
         if (btn.disabled) return;
@@ -1241,7 +1244,7 @@
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(shownId(S.user.email))}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
-      <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : '🌙 Sombre'}</button>`).join('')}</div>
+      <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : t === 'dark' ? '🌙 Sombre' : '⚫ Noir'}</button>`).join('')}</div>
       ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
