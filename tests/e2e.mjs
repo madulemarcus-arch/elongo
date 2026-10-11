@@ -542,15 +542,19 @@ assert.equal(await bodyBg(A), 'rgb(8, 14, 34)', 'dark background');
 await tab(A, 'tour'); await shot(A, '10-sombre-tour');
 await tab(A, 'calendrier'); await shot(A, '10b-sombre-calendrier');
 await tab(A, 'discussion'); await shot(A, '10c-sombre-discussion');
+await A.click('#themeBtn');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'black');
+assert.equal(await bodyBg(A), 'rgb(0, 0, 0)', 'pure black background');
+await tab(A, 'tour'); await shot(A, '10d-noir-tour');
 await A.reload(); await A.waitForSelector('#themeBtn');
-assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'dark theme kept after reload');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'black', 'black theme kept after reload');
 await A.click('#userChip');
 await A.click('#modalBody [data-m="theme:light"]');
 assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light', 'theme chosen from the account window');
 await A.click('#modalBody [data-m="theme:auto"]');
 assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-theme')), null);
 await A.click('#modal [data-m=close]');
-step('themes: automatic, light, dark, kept after reload');
+step('themes: automatic, light, dark, black, kept after reload');
 
 // ---------- Persistence, install, offline ----------
 await A.reload();
