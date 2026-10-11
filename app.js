@@ -834,6 +834,7 @@
     <form id="topicForm" class="addrow" style="margin:0" hidden><input id="topicIn" list="topicNames" maxlength="50" autocomplete="off" placeholder="Titre du sujet (ex. Retard de mars)" aria-label="Titre du nouveau sujet"><datalist id="topicNames"></datalist><button type="submit">Créer</button></form>
     <div id="topicHead" class="topichead"></div>
     <div id="chatlog" class="chatlog" role="log" aria-live="polite" tabindex="0"></div>
+    <div id="replyBox" class="pendbox replybox" hidden></div>
     <div id="pendingBox" class="pendbox" hidden></div>
     <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickfile" aria-label="Joindre une photo, un audio ou un PDF" title="Joindre">📎</button>
       <input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message">
@@ -845,6 +846,18 @@
     return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
   const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const hueOf = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  // WhatsApp-style reply: the quoted message is copied into the reply (author and a short excerpt), so it survives a deletion.
+  const attLabel = a => a.kind === 'audio' ? '🎤 Vocal' : a.kind === 'image' ? '📷 Photo' : '📄 ' + a.name;
+  const snippet = m => (m.body ? m.body : m.att ? attLabel(m.att) : '').replace(/\s+/g, ' ').slice(0, 100);
+  function renderReply() {
+    const b = $('replyBox'); if (!b) return; const r = ui.replyTo, cur = allTopics().get(ui.topic); b.hidden = !r || !!(cur && cur.closed);
+    if (r) b.innerHTML = `<div class="rq"><b>${esc(r.name)}</b><span>${esc(r.text)}</span></div><button type="button" class="mini" data-act="cancelreply" aria-label="Annuler la réponse">✕</button>`;
+  }
+  function startReply(mid) {
+    const m = S.msgs.find(x => x.id === mid); if (!m || !canChat()) return;
+    ui.replyTo = { id: m.id, name: m.author_name, text: snippet(m) }; renderReply();
+    const i = $('chatIn'); if (i) i.focus();
+  }
   function msgHtml(m, prev) {
     const mine = m.author_id === S.user.id, a = m.att, newDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
     const grouped = !newDay && prev.author_id === m.author_id && m.ts - prev.ts < 5 * 60000;   // same author within 5 minutes: no repeated name or avatar
@@ -855,7 +868,8 @@
         : `<button type="button" class="mini" data-act="showatt" data-mid="${esc(m.id)}">${a.kind === 'audio' ? 'Écouter le vocal' : a.kind === 'image' ? 'Afficher la photo' : 'Ouvrir le document'} (${esc(fmtSize(a.size))})</button>`;
       att = `<div class="att"><span class="sub">${esc(a.name)}</span><br>${body}</div>`;
     }
-    return (newDay ? `<div class="dsep"><span>${esc(dayLabel(m.ts))}</span></div>` : '') + `<div class="mrow${mine ? ' me' : ''}${grouped ? ' grouped' : ''}">${mine ? '' : grouped ? '<span class="av sm ghost" aria-hidden="true"></span>' : `<span class="av sm" aria-hidden="true" style="--h:${hueOf(m.author_name)}">${esc(initials(m.author_name))}</span>`}<div class="msg${mine ? ' me' : ''}" title="${esc(fmtTime(m.ts))}">${mine || grouped ? '' : `<b>${esc(m.author_name)}</b>`}${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}<div class="meta"><span class="ts">${esc(clock(m.ts))}</span>${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}" aria-label="Supprimer ce message" title="Supprimer">🗑</button>` : ''}</div></div></div>`;
+    const rp = m.reply && m.reply.name ? `<button type="button" class="quote" data-act="gotomsg" data-mid="${esc(m.reply.id || '')}" aria-label="Voir le message cité"><b>${esc(m.reply.name)}</b><span>${esc(m.reply.text || '')}</span></button>` : '';
+    return (newDay ? `<div class="dsep"><span>${esc(dayLabel(m.ts))}</span></div>` : '') + `<div class="mrow${mine ? ' me' : ''}${grouped ? ' grouped' : ''}" id="m-${esc(m.id)}" data-mid="${esc(m.id)}">${mine ? '' : grouped ? '<span class="av sm ghost" aria-hidden="true"></span>' : `<span class="av sm" aria-hidden="true" style="--h:${hueOf(m.author_name)}">${esc(initials(m.author_name))}</span>`}<div class="msg${mine ? ' me' : ''}" title="${esc(fmtTime(m.ts))}">${mine || grouped ? '' : `<b>${esc(m.author_name)}</b>`}${rp}${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}<div class="meta"><span class="ts">${esc(clock(m.ts))}</span>${canChat() ? `<button class="link" data-act="reply" data-mid="${esc(m.id)}" aria-label="Répondre à ce message" title="Répondre">↩</button>` : ''}${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}" aria-label="Supprimer ce message" title="Supprimer">🗑</button>` : ''}</div></div></div>`;
   }
   function renderPending() {
     const b = $('pendingBox'); if (!b) return; const p = ui.pending; b.hidden = !p;
@@ -880,7 +894,7 @@
     $('chatForm').hidden = !(can && open); $('topicForm').hidden = !(can && ui.newTopic);
     $('chatNote').hidden = can && open;
     $('chatNote').textContent = !can ? 'Rejoignez la tontine pour participer à la discussion.' : 'Ce sujet est clos. Rouvrez-le pour y écrire.';
-    renderPending(); updateRecBtn();
+    renderPending(); renderReply(); updateRecBtn();
     chrome();
   }
   // Images are shrunk before upload; every attachment must end up under the size limit.
@@ -1049,7 +1063,15 @@
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
-      if (act === 'topic') { ui.topic = id; renderChatParts(); return; }
+      if (act === 'topic') { ui.topic = id; ui.replyTo = null; renderChatParts(); return; }
+      if (act === 'reply') { startReply(b.dataset.mid); return; }
+      if (act === 'cancelreply') { ui.replyTo = null; renderReply(); return; }
+      if (act === 'gotomsg') {
+        const el = b.dataset.mid ? document.getElementById('m-' + b.dataset.mid) : null;
+        if (!el) { toast('Ce message est plus ancien ou a été supprimé.'); return; }
+        el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); return;
+      }
       if (act === 'syncnow') { await syncQueue(); return; }
       if (act === 'journalmore') { ui.journalAll = !ui.journalAll; render(); return; }
       if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
@@ -1212,6 +1234,16 @@
     if (!S.cfg) pickTontine(); await openTontine(); try { sessionStorage.removeItem('lisanga.code'); } catch (e) {}
     go(isAdmin() ? '#/organisateur' : '#/tour');
   }
+  // Swipe a message to the right to reply, as on WhatsApp.
+  (() => {
+    let x0 = 0, y0 = 0, row = null;
+    document.addEventListener('touchstart', ev => { row = ev.target.closest && ev.target.closest('#chatlog .mrow'); if (row && ev.touches.length === 1) { x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; } else row = null; }, { passive: true });
+    document.addEventListener('touchend', ev => {
+      if (!row) return; const t = ev.changedTouches[0], dx = t.clientX - x0, dy = Math.abs(t.clientY - y0), r = row; row = null;
+      if (dx > 70 && dy < 30) { startReply(r.dataset.mid); buzz(15); }
+    }, { passive: true });
+    document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && ev.target && ev.target.id === 'chatIn' && ui.replyTo) { ui.replyTo = null; renderReply(); } });
+  })();
   document.addEventListener('submit', async ev => {
     const f = ev.target; ev.preventDefault();
     try {
@@ -1266,9 +1298,9 @@
             const ext = (pend.name.split('.').pop() || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin', path = S.tid + '/' + S.user.id + '/' + rid() + '.' + ext;
             await B.putFile(path, pend.blob, pend.type); att = { path, name: pend.name, type: pend.type, size: pend.size, kind: pend.kind };
           }
-          try { const [row] = await B.insert('messages', { tontine_id: S.tid, topic_id: ui.topic === 'general' ? null : ui.topic, author_name: n, body: text, att }); notify({ kind: 'message', message_id: row.id }); }
+          try { const [row] = await B.insert('messages', { tontine_id: S.tid, topic_id: ui.topic === 'general' ? null : ui.topic, author_name: n, body: text, att, reply: ui.replyTo || null }); notify({ kind: 'message', message_id: row.id }); }
           catch (e) { if (att) await B.removeFiles([att.path]).catch(() => {}); throw e; }
-          $('chatIn').value = ''; ui.pending = null; await loadTable('messages'); renderChatParts();
+          $('chatIn').value = ''; ui.pending = null; ui.replyTo = null; await loadTable('messages'); renderChatParts();
         } finally { ui.chatBusy = false; const s = $('chatSend'); if (s) s.disabled = false; const i = $('chatIn'); if (i) i.focus(); }
       }
     } catch (e) { toast(f.id === 'chatForm' && e && e.msg ? e.msg : friendly(e)); }
