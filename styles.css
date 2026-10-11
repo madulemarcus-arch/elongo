@@ -63,7 +63,7 @@ h3 { font-size: 1.02rem; font-weight: 800; }
 main { max-width: 760px; margin: 0 auto; padding: 18px 16px calc(104px + env(safe-area-inset-bottom)); display: grid; gap: 18px; outline: none; }
 main > * { min-width: 0; }
 .tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 5; display: flex; max-width: 736px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 4px; box-shadow: 0 10px 30px rgba(8, 14, 34, .18); }
-.tabbar a { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px; font-size: .66rem; font-weight: 600; text-decoration: none; color: var(--muted); border-radius: 18px; }
+.tabbar a { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 1px; font-size: .62rem; font-weight: 600; text-decoration: none; color: var(--muted); border-radius: 18px; }
 .tabbar a span { font-size: 1.2rem; line-height: 1; }
 .tabbar a.on { color: var(--accent-ink); background: var(--accent); }
 .badge { position: absolute; top: 2px; left: 55%; background: var(--coin); color: var(--coin-ink); border-radius: 99px; font-size: .66rem; font-weight: 800; padding: 0 6px; min-width: 18px; text-align: center; }
@@ -353,3 +353,23 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 
 .offline-banner { background: var(--warn-tint); color: var(--warn); font-weight: 500; }
 .offline-banner .mini { margin-left: 6px; }
+
+/* ----- home (dashboard) ----- */
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.kpi { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; min-width: 0; }
+.kic { position: absolute; top: 10px; right: 12px; font-size: 1.2rem; opacity: .9; }
+.klbl { font-size: .78rem; font-weight: 700; color: var(--muted); padding-right: 28px; }
+.kval { font-size: 1.35rem; font-weight: 800; margin-top: 2px; overflow-wrap: anywhere; }
+.ksub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+.alerts { display: grid; gap: 8px; margin: 12px 0; }
+.alert { display: block; border-radius: 14px; padding: 11px 14px; background: var(--coin-tint); color: var(--on-tint); text-decoration: none; font-size: .93rem; }
+.alert.warn { background: var(--warn-tint); color: var(--warn); }
+.alert.ok { background: var(--ok-tint); color: var(--ok); }
+.shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.shortcuts .btn, .shortcuts button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 700; font-size: .92rem; text-decoration: none; }
+.shortcuts button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.cnt { background: var(--coin); color: var(--coin-ink); border-radius: 99px; font-size: .7rem; padding: 0 7px; min-width: 18px; text-align: center; }
+.mine.late { background: var(--warn-tint); color: var(--warn); }
+.home-now .mine { margin-top: 12px; }
+@media (min-width: 640px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.tabbar a { min-width: 0; }

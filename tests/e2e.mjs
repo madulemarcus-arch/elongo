@@ -184,6 +184,21 @@ await A.waitForSelector('li:has-text("Alice") .pen.settled');
 await A.click('#modal [data-m=close]');
 step('full payment + penalty settled');
 
+// Home dashboard: summary for the organizer and for a member
+await tab(A, 'bord');
+await A.waitForSelector('.kpis');
+const homeA = await text(A);
+for (const w of ['Total encaissé', 'Cagnottes remises', 'Prochains tours', 'Activité récente', 'Enregistrer un versement']) assert.ok(homeA.includes(w), 'organizer home shows: ' + w);
+await shot(A, '04-accueil-orga');
+await tab(Bp, 'bord');
+await Bp.waitForSelector('.kpis');
+const homeB = await text(Bp);
+assert.ok(homeB.includes('Total encaissé') && homeB.includes('Votre tour'), 'member home shows the summary and their turn');
+assert.equal(await Bp.locator('main [data-act=quickpay]').count(), 0, 'a member has no payment button on the home screen');
+await shot(Bp, '04-accueil-membre');
+await tab(A, 'tour'); await tab(Bp, 'tour');   // the following steps start from the Tour screen
+step('home dashboard: summary for organizer and member');
+
 // Member detail: number of payments, money paid, how it was sent
 await A.click('li:has-text("Alice") .name-link');
 await A.waitForSelector('#modal[open] h2:has-text("Alice")');
