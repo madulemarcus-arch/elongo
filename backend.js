@@ -121,6 +121,7 @@
       } else if (t === 'messages') {
         if (!isActive(d, row.tontine_id) || row.author_id !== B.user.id) throw denied();
         if (!row.body && !row.att) throw err('check', '23514');
+        if (row.reply && JSON.stringify(row.reply).length > 600) throw err('check', '23514');
         const tp = row.topic_id && T(d, 'topics').find(x => x.id === row.topic_id);
         if (row.topic_id && (!tp || tp.closed)) throw denied();
       }

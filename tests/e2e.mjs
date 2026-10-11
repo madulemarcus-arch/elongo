@@ -482,10 +482,21 @@ await A.waitForSelector('#topicBar .chip:has-text("Retard de mars")');
 await A.click('#topicBar .chip:has-text("Retard de mars")');
 await A.waitForSelector('.msg:has-text("Je paie demain")');
 await A.waitForSelector('#chatBadge[hidden]', { state: 'attached' });
+// Reply to a message, as on WhatsApp: the quote is shown above the answer and can be cancelled
+await A.click('.mrow:has-text("Je paie demain") [data-act=reply]');
+await A.waitForSelector('#replyBox:not([hidden]):has-text("Je paie demain")');
+await A.click('#replyBox [data-act=cancelreply]');
+await A.waitForSelector('#replyBox', { state: 'hidden' });
+await A.click('.mrow:has-text("Je paie demain") [data-act=reply]');
 await A.fill('#chatIn', 'Pas de souci Chantal');
 await A.click('#chatSend');
-await Bp.waitForSelector('.msg:has-text("Pas de souci Chantal")');
-step('chat topics + live messages + unread badge');
+await A.waitForSelector('.msg:has-text("Pas de souci Chantal") .quote:has-text("Je paie demain")');
+await Bp.waitForSelector('.msg:has-text("Pas de souci Chantal") .quote:has-text("Chantal")');
+assert.ok(await A.locator('#replyBox').isHidden(), 'the reply bar closes after sending');
+await Bp.click('.msg:has-text("Pas de souci Chantal") .quote');   // jumps to the quoted message
+await Bp.waitForSelector('.mrow.flash');
+await shot(Bp, '09-reponse');
+step('chat topics + live messages + unread badge + reply to a message');
 
 // Attachments: photo, PDF, voice
 const png = await readFile(join(root, 'icons/icon-192.png'));

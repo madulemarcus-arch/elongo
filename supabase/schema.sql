@@ -91,6 +91,8 @@ create table if not exists public.messages (
   created_at   timestamptz not null default now(),
   check (body <> '' or att is not null)
 );
+-- Réponse à un message : copie de l'auteur et d'un extrait ({id, name, text}), qui survit à la suppression du message cité.
+alter table public.messages add column if not exists reply jsonb check (reply is null or octet_length(reply::text) <= 600);
 create index if not exists messages_tontine_idx on public.messages (tontine_id, created_at);
 
 -- Appareils qui reçoivent les notifications push (un par téléphone ou navigateur et par compte).

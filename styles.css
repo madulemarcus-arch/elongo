@@ -373,3 +373,16 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .home-now .mine { margin-top: 12px; }
 @media (min-width: 640px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .tabbar a { min-width: 0; }
+
+/* ----- reply to a message ----- */
+.quote { display: block; width: 100%; text-align: left; margin: 2px 0 6px; padding: 5px 9px; border: 0; border-left: 3px solid var(--coin); border-radius: 8px; background: rgba(127, 127, 127, .14); color: inherit; font: inherit; font-size: .85rem; cursor: pointer; min-height: 0; box-shadow: none; }
+.quote b { display: block; font-size: .78rem; color: var(--coin-text); }
+.msg.me .quote b { color: inherit; opacity: .9; }
+.quote span { display: block; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replybox { border-left: 3px solid var(--coin); }
+.replybox .rq { flex: 1; min-width: 0; }
+.replybox .rq b { display: block; font-size: .8rem; color: var(--coin-text); }
+.replybox .rq span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
+@keyframes flashrow { 0%, 100% { background: transparent; } 30% { background: var(--coin-tint); } }
+.mrow.flash { animation: flashrow 1.4s ease-out; border-radius: 12px; }
+@media (prefers-reduced-motion: reduce) { .mrow.flash { animation: none; background: var(--coin-tint); } }
