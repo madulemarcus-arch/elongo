@@ -461,6 +461,7 @@
       }
     }
     const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
+      + `<button type="button" class="primary" data-act="quickpay">➕ Enregistrer un versement</button>`
       + `<button type="button" class="ghost" data-act="swap" data-r="${D.cur}">🔀 Changer de bénéficiaire</button>`
       + (D.cur > 0 ? undoBtn(D, 'ghost') : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
@@ -510,6 +511,56 @@
     $('modalBody').innerHTML = `<h2>Ordre modifié</h2><p>${esc(text)}.</p>${b ? `<p class="sub">Bénéficiaire du tour ${D.cur + 1} : <b>${esc(b.name)}</b> (${esc(turnDates(c, D.cur))}).</p>` : ''}
       <p><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', wa))}">Prévenir le groupe sur WhatsApp</a></p><div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
   }
+  // Records a versement of `v` for member `id` in the current round (shared by the member's sheet and the quick "+ Versement" window).
+  async function recordVersement(id, v, method) {
+    const c = S.cfg, D = derive(), rec = S.pay.get(D.cur + '_' + id), have = paidOf(rec);
+    const say = t => { const e = ($('modal').open && ($('payErr') || $('quickErr'))); if (e) e.textContent = t; else toast(t); };   // the window hides the toast, so errors show inside it
+    if (!nameOf(id)) { say('Choisissez un membre.'); return; }
+    if (!(v > 0)) { say('Entrez un montant supérieur à 0.'); return; }
+    if (!METHODS[method]) { say("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
+    store.set('lisanga.lastmethod', method);
+    const add = Math.min(v, c.amount - have); if (add <= 0) { say('Cette cotisation est déjà complète.'); return; }
+    const op = { id: newId(), tid: S.tid, round: D.cur, member_id: id, a: add, m: method, at: todayISO(), ts: new Date().toISOString(), by: chatName() || 'Organisateur', due: c.amount, name: nameOf(id) };
+    let res = null;
+    if (navigator.onLine !== false) { try { res = await commitVersement(op); } catch (e) { if (!isNetErr(e)) throw e; } }
+    if (res === 'full' || res === 'done') { say('Cette cotisation est déjà complète.'); await loadTable('payments'); return; }
+    if (!res) {   // no network: keep the versement on this phone, it is sent when the network is back
+      setQueue(getQueue().concat([op])); overlayPending();
+      delete ui.draft['v.' + id]; if ($('modal').open) $('modal').close(); render();
+      toast("Versement gardé sur ce téléphone : il partira dès que le réseau revient."); buzz(25); return;
+    }
+    const total = res.total;
+    audit('Versement de ' + plainMoney(res.add) + ' enregistré pour ' + nameOf(id) + ' (' + methodName(method) + '), tour ' + (D.cur + 1) + (total >= c.amount ? ', cotisation complète' : ''));
+    delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close();
+    toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(res.add) + ' enregistré, reste ' + money(c.amount - total) + '.');
+    buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
+  }
+  // "+ Versement": one window to pick the member, type the amount and the way it was sent.
+  function quickPayDialog() {
+    const c = S.cfg, D = derive(); if (!c || D.cur >= D.n) return;
+    const rest = m => Math.max(0, c.amount - (D.amt.get(m.id) || 0)), list = S.members.filter(m => rest(m) > 0);
+    if (!list.length) { toast('Tout le monde a déjà versé sa cotisation de ce tour.'); return; }
+    $('modalBody').innerHTML = `<h2>Enregistrer un versement</h2><p class="sub">Tour ${D.cur + 1} · cotisation de ${money(c.amount)}</p>
+      <label class="f" style="margin-top:10px">Membre<select id="qpMember">${list.map(m => `<option value="${esc(m.id)}" data-rest="${rest(m)}">${esc(m.name)} : reste ${money(rest(m))}</option>`).join('')}</select></label>
+      <label class="f" style="margin-top:8px">Montant reçu<input id="qpAmount" type="number" min="1" step="any" inputmode="decimal" value="${rest(list[0])}"></label>
+      <label class="f" style="margin-top:8px">Comment l'argent est arrivé${methodSelect('qp', lastMethod())}</label>
+      <p class="lock-err" id="quickErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" data-act="quickvers">Verser</button><button data-m="close">Annuler</button></div>`;
+    $('modal').showModal();
+  }
+  // Deletes one versement entered by mistake (any entry, not only the last), whatever its round. Totals are recomputed.
+  async function removeVersement(mid, round, idx) {
+    const c = S.cfg, rec = S.pay.get(round + '_' + mid), name = nameOf(mid); if (!c || !rec) return;
+    const full = Array.isArray(rec.log) ? rec.log : [], gone = idx >= 0 ? full[idx] : null;
+    if (gone && gone.pending) { setQueue(getQueue().filter(x => x.id !== gone.id)); await loadTable('payments'); toast('Versement en attente supprimé.'); return; }
+    const real = full.filter((x, k) => k !== idx && !x.pending), pendingSum = full.filter(x => x.pending).reduce((t, x) => t + Number(x.a), 0);
+    const removed = gone ? Number(gone.a) : Number(rec.amount) - pendingSum, base = Number(rec.amount) - pendingSum, amount = Math.max(0, base - removed);
+    const eq = { tontine_id: S.tid, round, member_id: mid };
+    if (!real.length && !rec.penalty_paid) await B.remove('payments', eq);
+    else await B.upsert('payments', Object.assign({}, eq, { amount, paid_on: real.length ? real[real.length - 1].at : rec.paid_on, done_on: amount >= c.amount ? (real.length ? real[real.length - 1].at : rec.done_on) : null, log: real, penalty_paid: !!rec.penalty_paid }), 'tontine_id,round,member_id');
+    audit('Versement de ' + plainMoney(removed) + ' supprimé pour ' + name + ' (' + (gone ? methodName(gone.m) + ', ' : '') + 'tour ' + (round + 1) + (gone && gone.at ? ', ' + fmtShort(gone.at) : '') + ') : saisi par erreur');
+    await loadTable('payments'); toast('Versement supprimé : ' + money(removed) + ' pour ' + name + '.');
+  }
   // Result of a manual reminder: who was reached, and who must be reminded another way (WhatsApp)
   function remindResultDialog(r) {
     const c = S.cfg, D = derive(), un = (r.unreachable || []).map(n => S.members.find(m => m.name === n)).filter(Boolean);
@@ -521,8 +572,9 @@
   // One member's contribution for the current round, in a sheet: history, penalty, new versement, undo, WhatsApp reminder.
   function payDialog(id) {
     const c = S.cfg, D = derive(), m = S.members.find(x => x.id === id); if (!c || !m || D.cur >= D.n) return;
+    ui.dlgFn = () => payDialog(id);
     const rec = S.pay.get(D.cur + '_' + id), a = D.amt.get(id) || 0, rest = Math.max(0, c.amount - a), paid = D.paidIds.has(id), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + (() => { let run = 0; return rec.log.map(x => { run += Number(x.a); return Object.assign({ cum: run }, x); }); })().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}${x.by ? ' · par ' + esc(x.by) : ''}${x.pending ? ' · <b>⏳ en attente d\'envoi</b>' : ''}</div></div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(id)), receiptText(c, m.name, { a: Number(x.a), m: x.m || '', round: D.cur, at: x.at, by: x.by || '', cum: x.cum })))}">Reçu</a></li>`).join('') + '</ul>' : '';
+    const hist = rec && rec.log && rec.log.length ? '<h3 style="margin-top:12px">Versements de ce tour</h3><ul class="list">' + (() => { let run = 0; return rec.log.map((x, k) => { run += Number(x.a); return Object.assign({ cum: run, k }, x); }); })().reverse().map(x => `<li class="row"><div class="grow"><div class="name num">${money(x.a)}</div><div class="sub">${esc(fmtShort(x.at))}${x.m ? ' · ' + esc(methodName(x.m)) : ''}${x.by ? ' · par ' + esc(x.by) : ''}${x.pending ? ' · <b>⏳ en attente d\'envoi</b>' : ''}</div></div><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(id)), receiptText(c, m.name, { a: Number(x.a), m: x.m || '', round: D.cur, at: x.at, by: x.by || '', cum: x.cum })))}">Reçu</a><button class="mini danger${ui.armed === 'dv:' + id + ':' + D.cur + ':' + x.k ? ' armed' : ''}" data-act="delvers" data-id="${esc(id)}" data-round="${D.cur}" data-i="${x.k}" aria-label="Supprimer ce versement saisi par erreur">${ui.armed === 'dv:' + id + ':' + D.cur + ':' + x.k ? 'Confirmer' : 'Supprimer'}</button></li>`).join('') + '</ul>' : '';
     const penLine = pen ? `<div class="pen${settled ? ' settled' : ''}" style="margin-top:8px">Pénalité ${money(pen)}${settled ? ' réglée' : ''} <button class="mini" data-act="pen" data-id="${esc(id)}" aria-pressed="${settled}"${rec ? '' : ' disabled'}>${settled ? 'Annuler' : 'Marquer réglée'}</button></div>` : '';
     const ph = !paid ? waPhone(c, S.contacts.get(id)) : '';
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">Tour ${D.cur + 1} · cotisation de ${money(c.amount)}</p>
@@ -892,7 +944,7 @@
       if (rec.member_id !== id) return;
       total += rec.amount;
       let run = 0;
-      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach(x => { run += Number(x.a); rows.push({ round: rec.round, a: Number(x.a), at: x.at, m: x.m || '', by: x.by || '', cum: run }); });
+      (Array.isArray(rec.log) && rec.log.length ? rec.log : [{ a: rec.amount, at: rec.paid_on }]).forEach((x, k) => { run += Number(x.a); rows.push({ round: rec.round, a: Number(x.a), at: x.at, m: x.m || '', by: x.by || '', cum: run, idx: Array.isArray(rec.log) && rec.log.length ? k : -1 }); });
     });
     rows.sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.round - a.round);
     const by = new Map();
@@ -902,13 +954,14 @@
   function memberDialog(id) {
     const m = S.allMembers.find(x => x.id === id); if (!m || !S.cfg) return;
     const st = memberStats(id), idx = S.members.findIndex(x => x.id === id), D = derive(), n = st.rows.length;
+    ui.dlgFn = () => memberDialog(id);
     const me0 = myRow(), canReceipt = isAdmin() || (me0 && me0.id === id), rph = isAdmin() ? waPhone(S.cfg, S.contacts.get(id)) : '';
     const where = idx < 0 ? '' : S.out.has(idx) ? `A reçu la cagnotte (tour ${idx + 1}).` : `Passe au tour ${idx + 1} sur ${D.n}.`;
     $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>
       <div class="statgrid"><div><div class="big num">${n}</div><div class="sub">versement${n > 1 ? 's' : ''}</div></div><div><div class="big num">${money(st.total)}</div><div class="sub">versé en tout</div></div></div>
       <h3>Récompenses</h3>${(() => { const pu = punctuality(m), b = badgesHtml(pu); return b ? `<p class="badges">${b}</p><p class="hint">${pu.streak > 1 ? pu.streak + ' tours payés à temps d\'affilée. Bravo !' : 'Dernier tour payé avant la date de fin. Bravo !'}</p>` : '<p class="hint">Payer sa cotisation avant la fin du tour donne le badge ⭐ Ponctuel.</p>'; })()}
       <h3 style="margin-top:14px">Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
-      ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}${r.by ? ' · par ' + esc(r.by) : ''}</div></div>${canReceipt ? `<a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(rph, receiptText(S.cfg, m.name, r)))}">Reçu</a>` : ''}</li>`).join('') + '</ul>' : ''}
+      ${n ? '<h3 style="margin-top:14px">Détail des versements</h3><ul class="list">' + st.rows.map(r => `<li class="row"><div class="grow"><div class="name num">${money(r.a)}</div><div class="sub">${esc(r.at ? fmtShort(r.at) : '')} · Tour ${r.round + 1} · ${esc(methodName(r.m))}${r.by ? ' · par ' + esc(r.by) : ''}</div></div>${canReceipt ? `<a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(rph, receiptText(S.cfg, m.name, r)))}">Reçu</a>` : ''}${isAdmin() ? `<button class="mini danger${ui.armed === 'dv:' + id + ':' + r.round + ':' + r.idx ? ' armed' : ''}" data-act="delvers" data-id="${esc(id)}" data-round="${r.round}" data-i="${r.idx}" aria-label="Supprimer ce versement saisi par erreur">${ui.armed === 'dv:' + id + ':' + r.round + ':' + r.idx ? 'Confirmer' : 'Supprimer'}</button>` : ''}</li>`).join('') + '</ul>' : ''}
       <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
     $('modal').showModal();
   }
@@ -992,27 +1045,16 @@
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id);
         if (rec) { await B.update('payments', { penalty_paid: !rec.penalty_paid }, eqPay(D.cur, id)); await loadTable('payments'); audit('Pénalité de ' + nameOf(id) + (rec.penalty_paid ? ' remise en attente' : ' marquée réglée') + ', tour ' + (D.cur + 1)); payDialog(id); }
       } else if (act === 'vers') {
-        ui.armed = ''; const c = S.cfg, rec = S.pay.get(D.cur + '_' + id), have = paidOf(rec), inp = document.querySelector('input[data-d="v.' + id + '"]'), v = Number(inp ? inp.value : c.amount - have);
-        const say = t => { const e = $('payErr'); if (e && $('modal').open) e.textContent = t; else toast(t); };   // the sheet hides the toast, so errors show inside it
-        if (!(v > 0)) { say('Entrez un montant supérieur à 0.'); return; }
-        const msel = document.querySelector('select[data-d="m.' + id + '"]'), method = msel ? msel.value : '';
-        if (!METHODS[method]) { say("Choisissez comment l'argent a été envoyé : M-Pesa, Orange Money, Airtel Money, Illico ou cash."); return; }
-        store.set('lisanga.lastmethod', method);
-        const add = Math.min(v, c.amount - have); if (add <= 0) { say('Cette cotisation est déjà complète.'); return; }
-        const op = { id: newId(), tid: S.tid, round: D.cur, member_id: id, a: add, m: method, at: todayISO(), ts: new Date().toISOString(), by: chatName() || 'Organisateur', due: c.amount, name: nameOf(id) };
-        let res = null;
-        if (navigator.onLine !== false) { try { res = await commitVersement(op); } catch (e) { if (!isNetErr(e)) throw e; } }
-        if (res === 'full' || res === 'done') { say('Cette cotisation est déjà complète.'); await loadTable('payments'); return; }
-        if (!res) {   // no network: keep the versement on this phone, it is sent when the network is back
-          setQueue(getQueue().concat([op])); overlayPending();
-          delete ui.draft['v.' + id]; if ($('modal').open) $('modal').close(); render();
-          toast("Versement gardé sur ce téléphone : il partira dès que le réseau revient."); buzz(25); return;
-        }
-        const total = res.total;
-        audit('Versement de ' + plainMoney(res.add) + ' enregistré pour ' + nameOf(id) + ' (' + methodName(method) + '), tour ' + (D.cur + 1) + (total >= c.amount ? ', cotisation complète' : ''));
-        delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close();
-        toast(total >= c.amount ? 'Cotisation complète : ' + money(total) + '.' : 'Versement de ' + money(res.add) + ' enregistré, reste ' + money(c.amount - total) + '.');
-        buzz(25); if (total >= c.amount && S.members.length && derive().paidIds.size === S.members.length) { toast('Tout le monde a versé : la cagnotte du tour est complète !'); celebrate(); }
+        ui.armed = ''; const rec0 = S.pay.get(D.cur + '_' + id), inp = document.querySelector('input[data-d="v.' + id + '"]'), msel = document.querySelector('select[data-d="m.' + id + '"]');
+        await recordVersement(id, Number(inp ? inp.value : S.cfg.amount - paidOf(rec0)), msel ? msel.value : '');
+      } else if (act === 'quickpay') { quickPayDialog(); return;
+      } else if (act === 'quickvers') {
+        const mid = ($('qpMember') || {}).value, msel = document.querySelector('select[data-d="m.qp"]');
+        await recordVersement(mid, Number(($('qpAmount') || {}).value), msel ? msel.value : '');
+      } else if (act === 'delvers') {
+        const round = Number(b.dataset.round), i = Number(b.dataset.i), key = 'dv:' + id + ':' + round + ':' + i;
+        if (ui.armed !== key) { ui.armed = key; if (ui.dlgFn) ui.dlgFn(); return; }
+        ui.armed = ''; await removeVersement(id, round, i); if (ui.dlgFn) ui.dlgFn(); return;
       } else if (act === 'unvers') {
         ui.armed = ''; const rec = S.pay.get(D.cur + '_' + id); if (!rec) return;
         const lastE = (rec.log || [])[(rec.log || []).length - 1];
@@ -1146,13 +1188,16 @@
     } catch (e) { toast(f.id === 'chatForm' && e && e.msg ? e.msg : friendly(e)); }
   });
   document.addEventListener('input', ev => {
-    const i = ev.target; if (!i || !i.dataset || !i.dataset.d) return;
+    const i = ev.target; if (i && i.closest && i.closest('#modalBody')) { const er = $('quickErr') || $('payErr'); if (er) er.textContent = ''; }
+    if (!i || !i.dataset || !i.dataset.d) return;
     ui.draft[i.dataset.d] = i.type === 'checkbox' ? i.checked : i.value;
     const m = /^([cs])\.(days|start)$/.exec(i.dataset.d), out = m && $('prev-' + m[1]);
     if (out) out.textContent = tourPreview(document.querySelector(`[data-d="${m[1]}.start"]`).value, document.querySelector(`[data-d="${m[1]}.days"]`).value, m[1] === 's' ? S.members.length : 0);
   });
   document.addEventListener('change', async ev => {
     const i = ev.target;
+    if (i && i.closest && i.closest('#modalBody')) { const er = $('quickErr') || $('payErr'); if (er) er.textContent = ''; }   // a correction clears the previous error
+    if (i && i.id === 'qpMember') { const o = i.selectedOptions[0]; if (o && $('qpAmount')) $('qpAmount').value = o.dataset.rest; return; }
     if (i && (i.id === 'fileIn' || i.id === 'voiceIn')) { const f = i.files[0]; i.value = ''; if (f) attach(f); return; }
     if (i && i.dataset && i.dataset.d && i.type === 'checkbox') ui.draft[i.dataset.d] = i.checked;
     const p = i && i.closest && i.closest('input[data-phone]'); if (!p) return;
