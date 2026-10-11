@@ -171,3 +171,21 @@ select pg_temp.check('journal: un membre actif le lit', (select count(*) from jo
 select pg_temp.fails('journal: un membre simple n''écrit pas', format('insert into journal (tontine_id, by_name, text) values (%L, ''Bob'', ''faux'')', current_setting('app.t')));
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 select pg_temp.zero('journal: un intrus ne le lit pas', $$select count(*)::int from journal$$);
+
+-- helper functions: callable by signed-in users (policies need them), not by anonymous visitors
+reset role;
+select pg_temp.check('fonctions internes: fermées à anon', not exists (
+  select 1 from unnest(array['is_creator(uuid)','is_owner(uuid)','is_active(uuid)','is_in(uuid)','topic_open(uuid,uuid)','guard_organizers()']) f
+  where has_function_privilege('anon', 'public.' || f, 'execute')));
+select pg_temp.check('fonctions internes: ouvertes aux connectés', has_function_privilege('authenticated', 'public.is_owner(uuid)', 'execute'));
+
+-- deleting a tontine: the creator only (a co-organizer cannot), everything attached goes with it
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+do $$ declare n int; begin delete from tontines; get diagnostics n = row_count; perform set_config('app.n', n::text, false); end $$;
+select pg_temp.check('suppression: un membre ne supprime pas la tontine', current_setting('app.n')::int = 0);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+do $$ declare n int; begin delete from tontines; get diagnostics n = row_count; perform set_config('app.n', n::text, false); end $$;
+select pg_temp.check('suppression: le créateur supprime la tontine', current_setting('app.n')::int = 1);
+reset role;
+select pg_temp.check('suppression: membres, versements et journal partent avec', (select count(*) from members) + (select count(*) from payments) + (select count(*) from journal) = 0);

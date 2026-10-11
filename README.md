@@ -4,11 +4,12 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 
 ## Fonctionnalités
 
-- **Comptes** (e-mail + mot de passe). Celui qui crée la tontine en est l'organisateur.
+- **Comptes** (numéro de téléphone ou e-mail, + mot de passe : pas besoin d'adresse e-mail). Celui qui crée la tontine en est l'organisateur.
 - **Réglages du groupe** : nom, cotisation, monnaie, **durée d'un tour en jours** et début du premier tour (la date de fin de chaque tour est calculée et affichée tout de suite : « Tour 1 : du 2 oct. au 8 oct. »), pénalité de retard, rappel (jours avant la fin du tour), indicatif pays pour WhatsApp, ouverture des inscriptions.
 - **Membres et ordre de passage** : ajout à la main, montée/descente, retrait ; les membres déjà servis sont verrouillés.
 - **Inscription avec validation** : lien ou code d'invitation (onglet Organisateur) ; la personne crée son compte, demande à rejoindre, l'organisateur accepte (le membre est ajouté en fin d'ordre) ou refuse. Le téléphone n'est lisible que par l'organisateur.
 - **Cotisations par versements partiels**, annulation du dernier versement, **pénalités de retard** (à marquer réglées).
+- **Supprimer la tontine** : dans l'onglet Organisateur (tout en bas), réservé au créateur. Il faut écrire le nom exact de la tontine ; membres, versements, calendrier, discussion et journal sont effacés pour tout le monde, sans retour possible. Pensez à exporter le PDF ou l'Excel avant.
 - **Moyen de paiement** obligatoire à chaque versement (M-Pesa, Orange Money, Airtel Money, Illico Cash, cash à l'organisateur ou au caissier).
 - **Calendrier visuel** : cartes « Prochains tours » (3 prochains bénéficiaires avec leurs dates), grille mensuelle (jours de chaque tour colorés, badge « T2 » le jour de la remise, aujourd'hui entouré, navigation de mois en mois) et liste de tous les tours.
 - **Versement rapide et suppression** : le bouton « ➕ Enregistrer un versement » (haut de l'écran Tour) ouvre une fenêtre unique : choix du membre (avec ce qui lui reste à payer), montant reçu (pré-rempli), moyen de paiement. Un versement saisi par erreur se **supprime** (avec confirmation) depuis la fiche de versement du membre ou sa fiche détaillée, quel que soit le tour et même s'il n'est pas le dernier ; les totaux sont recalculés et la suppression est inscrite au journal (« saisi par erreur »).
@@ -49,7 +50,7 @@ Sans configuration, l'appli tourne en **mode démo** : les données restent dans
 
 1. Créez un projet sur [supabase.com](https://supabase.com).
 2. **SQL Editor** : collez `supabase/schema.sql` en entier et lancez-le (tables, règles RLS, temps réel, stockage des fichiers). Il peut être relancé sans danger.
-3. **Authentication → Providers → Email** : laissez l'e-mail activé. Pour que les membres entrent sans attendre un message, désactivez « Confirm email » (sinon ils devront d'abord cliquer le lien reçu).
+3. **Authentication → Providers → Email** : laissez l'e-mail activé. **Désactivez « Confirm email »** : les comptes par numéro de téléphone n'ont pas de boîte e-mail et ne pourraient jamais être confirmés (et les autres entrent ainsi sans attendre un message).
 4. Copiez l'URL du projet et la clé **anon public** (Settings → API) dans `config.js`. Ces deux valeurs sont publiques par conception ; la sécurité vient des règles RLS.
 5. Publiez le dossier sur un hébergement statique en https (GitHub Pages, Netlify, Cloudflare Pages…). Sur téléphone : menu du navigateur → « Ajouter à l'écran d'accueil ».
 

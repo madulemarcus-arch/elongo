@@ -78,13 +78,23 @@
     document.body.appendChild(box); setTimeout(() => box.remove(), 3800);
   }
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
+  // Sign-in id: an e-mail, or a phone number turned into a private address (no mailbox needed).
+  const PHONE_DOMAIN = '@tel.elongo.app';
+  function loginId(raw) {
+    const v = String(raw || '').trim();
+    if (v.includes('@')) return v;
+    let d = v.replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2); else if (d.startsWith('0')) d = '243' + d.slice(1);
+    return d.length >= 8 ? d + PHONE_DOMAIN : '';
+  }
+  const shownId = e => String(e || '').endsWith(PHONE_DOMAIN) ? '+' + e.slice(0, -PHONE_DOMAIN.length) : e;
   function friendly(e) {
     const m = String((e && e.message) || ''), c = e && e.code;
-    if (/Invalid login credentials/i.test(m)) return 'E-mail ou mot de passe incorrect.';
-    if (/already registered/i.test(m)) return 'Un compte existe déjà avec cet e-mail.';
+    if (/Invalid login credentials/i.test(m)) return 'Numéro, e-mail ou mot de passe incorrect.';
+    if (/already registered/i.test(m)) return 'Un compte existe déjà avec cet identifiant. Connectez-vous.';
     if (/Email not confirmed/i.test(m)) return "Confirmez d'abord votre e-mail (lien reçu par message), puis connectez-vous.";
     if (/at least \d+ characters/i.test(m)) return 'Le mot de passe doit avoir au moins 6 caractères.';
-    if (/invalid.*email|email.*invalid/i.test(m)) return 'Adresse e-mail invalide.';
+    if (/invalid.*email|email.*invalid/i.test(m)) return 'Numéro de téléphone ou adresse e-mail invalide.';
     if (/rate limit/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes.';
     if (m === 'invalid_code') return "Code d'invitation inconnu.";
     if (m === 'join_closed') return "Les inscriptions sont fermées pour cette tontine.";
@@ -224,7 +234,7 @@
   async function loadTable(name) {
     const tid = S.tid; if (!tid) return;
     const eq = { tontine_id: tid };
-    if (name === 'tontines') { await loadTontines(); if (tid === S.tid) S.cfg = S.tontines.find(t => t.id === tid) || null; return; }
+    if (name === 'tontines') { await loadTontines(); if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast('Cette tontine a été supprimée par son créateur.'); await afterTontineGone(); } } return; }
     if (name === 'contacts' && !isAdmin()) return;
     if (name === 'journal') { try { const jr = await selectCached('journal', tid, { eq, order: [['created_at', false]], limit: 100 }); if (jr) S.journal = jr.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
     const rows = await selectCached(name, tid, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
@@ -387,7 +397,7 @@
     $('tabbar').hidden = !tabs;
     document.querySelectorAll('.tabbar a').forEach(a => { a.classList.toggle('on', a.dataset.tab === S.view); a.hidden = a.dataset.role === 'orga' && !isAdmin(); });
     $('liveDot').hidden = !(signed && S.tid);
-    if (signed) { const m = myRow(); $('userChip').textContent = (m ? m.name : S.user.email); }
+    if (signed) { const m = myRow(); $('userChip').textContent = (m ? m.name : shownId(S.user.email)); }
     $('reqBadge').textContent = S.pending.length; $('reqBadge').hidden = !(isAdmin() && S.pending.length);
     const unread = S.loaded ? totalUnread() : 0; $('chatBadge').textContent = unread; $('chatBadge').hidden = !unread;
   }
@@ -398,7 +408,7 @@
     return `<section class="panel auth"><div class="authhead"><img src="icons/icon-192.png" alt="" width="72" height="72"><div><p class="eyebrow">Tontine</p><h2>Elongo</h2></div></div><p class="hint" style="margin:6px 0 14px">Suivez votre tontine en direct avec le groupe.</p>
       ${code ? '<div class="mine" style="margin-bottom:14px">Vous êtes invité à rejoindre une tontine. Connectez-vous ou créez un compte pour continuer.</div>' : ''}
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
-      <form id="authForm"><label class="f">Adresse e-mail<input type="email" name="email" required autocomplete="email" inputmode="email"></label>
+      <form id="authForm"><label class="f">Téléphone ou e-mail<input type="text" name="email" required autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Ex. 0812345678"></label>
       <label class="f">Mot de passe${up ? ' (6 caractères minimum)' : ''}<span class="pw"><input type="password" name="password" required minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form></section>`;
   }
@@ -413,7 +423,7 @@
       <div class="f">Participation<label class="inl"><input type="checkbox" data-d="c.part" ${dv('c.part', true) ? 'checked' : ''}> Je participe aux tours</label></div>
       <button class="primary" type="submit">Créer la tontine</button></form></section>`;
   const joinFields = () => `<input data-d="j.name" value="${esc(dv('j.name', ''))}" maxlength="40" placeholder="Votre nom" aria-label="Votre nom" required>
-      <input data-d="j.phone" value="${esc(dv('j.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone WhatsApp" aria-label="Votre numéro de téléphone">`;
+      <input data-d="j.phone" value="${esc(dv('j.phone', S.user && S.user.email.endsWith(PHONE_DOMAIN) ? shownId(S.user.email).slice(1) : ''))}" class="ph" inputmode="tel" placeholder="Téléphone WhatsApp" aria-label="Votre numéro de téléphone">`;
   function viewWelcome() {
     return `<section class="panel empty"><h2>Bienvenue sur Elongo</h2><p class="hint">Créez la tontine de votre groupe, ou rejoignez celle de vos amis avec le code que l'organisateur vous a donné.</p>${S.tid ? '<p style="margin-top:12px"><button type="button" data-act="back">Retour à ma tontine</button></p>' : ''}</section>
       ${createForm()}
@@ -721,6 +731,9 @@
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
+    const del = isCreator() ? `<div><h3>Supprimer la tontine</h3><p class="hint" style="margin:6px 0 10px">Efface définitivement « ${esc(c.name)} » pour tout le monde : membres, versements, calendrier, discussion et journal. Pensez à exporter le PDF ou le fichier Excel avant. Seul le créateur peut le faire.</p>
+      <div class="grid"><label class="f">Pour confirmer, écrivez le nom exact de la tontine<input data-d="del.name" value="${esc(dv('del.name', ''))}" autocomplete="off" maxlength="60" placeholder="${esc(c.name)}"></label>
+      <button class="danger" type="button" data-act="deltontine">Supprimer définitivement</button></div></div>` : '';
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
       ${S.members.some(m => !m.user_id) ? `<select class="msel" data-d="l.${esc(r.id)}" aria-label="Relier à un membre déjà dans la liste"><option value="">Nouveau membre</option>${S.members.filter(m => !m.user_id).map(m => `<option value="${esc(m.id)}"${dv('l.' + r.id, '') === m.id ? ' selected' : ''}>C'est : ${esc(m.name)}</option>`).join('')}</select>` : ''}
       <button class="mini primary" data-act="accept" data-id="${esc(r.id)}">Accepter</button><button class="mini danger" data-act="reject" data-id="${esc(r.id)}">Refuser</button></li>`).join('') : '<li class="hint">Aucune demande pour le moment.</li>'}</ul></div>`;
@@ -737,7 +750,7 @@
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
       <input data-d="a.phone" value="${esc(dv('a.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone (facultatif)" aria-label="Téléphone du nouveau membre"><button class="primary" type="submit">Ajouter</button></form></div>`;
-    return `<section class="panel"><h2>Espace organisateur</h2><div class="adm">${invite}${reqs}${mem}${cfg}${exp}</div></section>`;
+    return `<section class="panel"><h2>Espace organisateur</h2><div class="adm">${invite}${reqs}${mem}${cfg}${exp}${del}</div></section>`;
   }
 
   // ---------- Group chat ----------
@@ -1111,6 +1124,14 @@
         await B.update('members', { position: o.position }, { id: a.id }); await B.update('members', { position: pa }, { id: o.id });
         if (a.position === o.position) await B.update('members', { position: o.position }, { id: a.id });
         await loadTable('members');
+      } else if (act === 'deltontine') {
+        const typed = ((document.querySelector('input[data-d="del.name"]') || {}).value || '').trim();
+        if (!isCreator() || typed !== S.cfg.name) { toast('Écrivez le nom exact de la tontine pour confirmer.'); return; }
+        const gone = S.tid, files = S.msgs.filter(m => m.att).map(m => m.att.path);
+        const rows = await B.remove('tontines', { id: gone });
+        if (!rows || !rows.length) { toast('Suppression refusée : seul le créateur peut supprimer la tontine.'); return; }
+        if (files.length) await B.removeFiles(files).catch(() => {});
+        ui.draft = {}; ui.armed = ''; await afterTontineGone(); toast('Tontine supprimée.');
       } else if (act === 'rm') {
         if (ui.armed !== 'rm:' + id) { ui.armed = 'rm:' + id; render(); return; }
         const gone = nameOf(id); ui.armed = ''; await B.remove('members', { id }); await loadTable('members'); await loadTable('payments'); audit((gone || 'Un membre') + ' retiré de la tontine');
@@ -1122,6 +1143,11 @@
   // Read form values from the DOM (autofill may not fire input events).
   const fv = f => { const o = {}; f.querySelectorAll('[data-d]').forEach(i => { o[i.dataset.d] = i.type === 'checkbox' ? i.checked : i.value; }); return o; };
   const clearDraft = prefix => Object.keys(ui.draft).forEach(k => { if (k.startsWith(prefix)) delete ui.draft[k]; });
+  // The open tontine no longer exists (deleted by its creator): go to another one, or to the welcome screen.
+  async function afterTontineGone() {
+    await loadTontines(); pickTontine(); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine();
+    go(S.tid ? (isAdmin() ? '#/organisateur' : '#/tour') : '#/accueil');
+  }
   async function pickAfterJoin(tid) {
     await loadTontines(); S.tid = tid; S.cfg = S.tontines.find(t => t.id === tid) || null;
     if (!S.cfg) pickTontine(); await openTontine(); try { sessionStorage.removeItem('lisanga.code'); } catch (e) {}
@@ -1131,12 +1157,13 @@
     const f = ev.target; ev.preventDefault();
     try {
       if (f.id === 'authForm') {
-        const email = f.email.value.trim(), password = f.password.value, err = $('authErr'); err.textContent = '';
+        const email = loginId(f.email.value), password = f.password.value, err = $('authErr'); err.textContent = '';
+        if (!email) { err.textContent = 'Entrez votre numéro de téléphone (ex. 0812345678) ou votre e-mail.'; return; }
         const btn = f.querySelector('button.primary'), label = btn.textContent, slow = setTimeout(() => { err.textContent = 'La connexion est lente, patientez un instant…'; }, 6000);
         if (btn.disabled) return;
         btn.disabled = true; btn.textContent = label.startsWith('Créer') ? 'Création…' : 'Connexion…';
         try {
-          if (label.startsWith('Créer')) { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Confirmez votre e-mail (lien reçu par message), puis connectez-vous.'; ui.authMode = 'in'; } }
+          if (label.startsWith('Créer')) { const r = await B.signUp(email, password); if (r.needsConfirm) { err.textContent = 'Compte créé. Il doit être confirmé par l\'administrateur de l\'application avant la première connexion.'; ui.authMode = 'in'; } }
           else await B.signIn(email, password);
         } catch (e) { err.textContent = friendly(e) + (/Invalid login credentials/i.test(String(e && e.message)) ? " Pas encore de compte ? Appuyez sur « Créer un compte », en haut." : ''); } finally { clearTimeout(slow); if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
       } else if (f.id === 'createForm') {
@@ -1211,7 +1238,7 @@
   applyTheme();
   $('userChip').addEventListener('click', () => {
     const m = $('modal'), body = $('modalBody');
-    body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(S.user.email)}</p>
+    body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(shownId(S.user.email))}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : '🌙 Sombre'}</button>`).join('')}</div>

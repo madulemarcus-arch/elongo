@@ -186,6 +186,7 @@
       gone.forEach(g => {   // cascades of schema.sql
         if (t === 'members') ['contacts', 'payments', 'payouts'].forEach(x => { d[x] = T(d, x).filter(r => r.member_id !== g.id); });
         if (t === 'topics') d.messages = T(d, 'messages').filter(r => r.topic_id !== g.id);
+        if (t === 'tontines') ['members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal'].forEach(x => { d[x] = T(d, x).filter(r => r.tontine_id !== g.id); });
       });
       save(d); gone.forEach(r => notify(t, tid(t, r))); return copy(gone);
     };
