@@ -386,3 +386,8 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 @keyframes flashrow { 0%, 100% { background: transparent; } 30% { background: var(--coin-tint); } }
 .mrow.flash { animation: flashrow 1.4s ease-out; border-radius: 12px; }
 @media (prefers-reduced-motion: reduce) { .mrow.flash { animation: none; background: var(--coin-tint); } }
+
+/* the reply button is a visible, labelled action (a small faded icon was easy to miss) */
+.msg .meta { flex-wrap: wrap; }
+.msg .meta button.link[data-act="reply"] { opacity: 1; font-weight: 700; font-size: .85rem; padding: 6px 8px; margin: -4px 0; color: var(--accent); min-height: 32px; }
+.msg.me .meta button.link[data-act="reply"] { color: inherit; }

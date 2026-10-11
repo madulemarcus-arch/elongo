@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Bump VERSION whenever an asset changes so phones pick up the update.
 // Data calls to Supabase are cross-origin and never cached here: live data always comes from the server.
-const VERSION = 'elongo-v39';
+const VERSION = 'elongo-v40';
 const ASSETS = ['./', 'index.html', 'styles.css', 'config.js', 'backend.js', 'app.js', 'manifest.webmanifest',
   'vendor/supabase.js', 'vendor/591.supabase.js', 'vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
