@@ -114,10 +114,15 @@ await Bp.click('[data-act=showpw]');
 assert.equal(await Bp.getAttribute('#authForm input[name=password]', 'type'), 'text', 'the eye shows the password');
 await Bp.click('[data-act=showpw]');
 assert.equal(await Bp.getAttribute('#authForm input[name=password]', 'type'), 'password');
-await Bp.fill('#authForm input[name=email]', 'chantal@example.cd');
+await Bp.fill('#authForm input[name=email]', 'abc');
 await Bp.fill('#authForm input[name=password]', 'secret456');
 await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('#authErr:has-text("numéro de téléphone")');
+await Bp.fill('#authForm input[name=email]', '0991 11 22 22');   // a phone number is enough: no e-mail needed
+await Bp.click('#authForm button.primary');
 await Bp.waitForSelector('h2:has-text("Rejoindre « Tontine des amis »")');
+assert.equal(await Bp.inputValue(d$('j.phone')), '243991112222', 'the phone used to sign up is prefilled');
+assert.equal((await Bp.textContent('#userChip')).trim(), '+243991112222');
 await Bp.fill(d$('j.name'), 'Chantal');
 await Bp.fill(d$('j.phone'), '0991112222');
 await shot(Bp, '03-invitation');
@@ -742,6 +747,20 @@ await A.click('#modal [data-m=close]');
 await A.waitForSelector('.hero h2:has-text("Chantal")');
 assert.equal(await Bp.locator('[data-act=swap]').count(), 0, 'members cannot change the order');
 step('change the beneficiary: swap, pass the turn, message for the group, journal');
+
+// ---------- Delete the tontine: creator only, name typed to confirm, everyone else is sent back to the welcome screen ----------
+await A.goto(url + '#/organisateur');
+await A.waitForSelector(d$('del.name'));
+assert.equal(await Bp.locator('[data-act=deltontine]').count(), 0, 'a member cannot delete the tontine');
+await A.fill(d$('del.name'), 'autre nom');
+await A.click('[data-act=deltontine]');
+await A.waitForSelector('#toast.show:has-text("nom exact")');
+assert.ok(await A.locator(d$('del.name')).count(), 'wrong name: nothing is deleted');
+await A.fill(d$('del.name'), 'Tontine des amis');
+await A.click('[data-act=deltontine]');
+await A.waitForFunction(() => location.hash === '#/accueil');
+await Bp.waitForFunction(() => location.hash === '#/accueil');
+step('tontine deleted by its creator: gone for everyone');
 
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).
