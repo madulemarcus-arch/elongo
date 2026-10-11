@@ -678,6 +678,42 @@ await A.waitForSelector('#offlineBanner', { state: 'hidden' });
 assert.deepEqual(await dbPay(A, 'Bob'), [], 'the cancelled versement was never sent');
 step('offline: versement kept on the phone, sent when the network is back, cancellable while waiting');
 
+// ---------- "+ Versement" window and deleting a versement entered by mistake ----------
+await tab(A, 'tour');
+await A.waitForSelector('.hero [data-act=quickpay]');
+await A.click('.hero [data-act=quickpay]');
+await A.waitForSelector('#modal[open] #qpMember');
+await A.selectOption('#qpMember', await A.$$eval('#qpMember option', os => os.find(o => /Marcus/.test(o.textContent)).value));
+assert.equal(await A.inputValue('#qpAmount'), '10000', 'amount pre-filled with what is left to pay');
+await A.fill('#qpAmount', '2000');
+await A.selectOption('#modalBody select.msel', '');   // the last method used is pre-selected: clear it to check that a method is required
+await A.click('#modalBody [data-act=quickvers]');
+await A.waitForSelector('#quickErr:has-text("Choisissez comment")');
+await A.selectOption('#modalBody select.msel', 'cash_orga');
+await shot(A, '14-versement-rapide');
+await A.click('#modalBody [data-act=quickvers]');
+await A.waitForSelector('li:has-text("Marcus"):has-text("reste 8")');
+await openPay('Marcus');
+await A.click('#modalBody [data-act=delvers]');
+await A.waitForSelector('#modalBody [data-act=delvers].armed:has-text("Confirmer")');
+await A.click('#modalBody [data-act=delvers]');
+await A.waitForSelector('#modalBody:has-text("Rien versé")');
+await A.click('#modal [data-m=close]');
+assert.deepEqual(await dbPay(A, 'Marcus'), [], 'the versement entered by mistake is gone');
+await tab(A, 'direct');
+await A.waitForSelector('.journal li:has-text("Versement de 2 000 FC supprimé pour Marcus"):has-text("saisi par erreur")');
+// an older versement (not the last one, another round) can be deleted from the member's sheet
+await tab(A, 'tour');
+await A.click('li:has-text("Alice") .name-link');
+await A.waitForSelector('#modal[open] h3:has-text("Détail des versements")');
+await A.click('#modalBody li:has-text("Tour 1"):has-text("M-Pesa") [data-act=delvers]');
+await A.click('#modalBody li:has-text("Tour 1"):has-text("M-Pesa") [data-act=delvers]:has-text("Confirmer")');
+await A.waitForSelector('#modalBody li:has-text("Tour 1"):has-text("M-Pesa")', { state: 'detached' });
+assert.deepEqual(await A.evaluate(() => { const d = JSON.parse(localStorage.getItem('lisanga.demo.v1')), m = d.members.find(x => x.name === 'Alice'), p = d.payments.find(x => x.member_id === m.id && x.round === 0); return p && { amount: p.amount, n: p.log.length }; }), { amount: 6000, n: 1 }, 'only the 4 000 FC versement was removed, the total follows');
+await A.click('#modal [data-m=close]');
+assert.equal(await Bp.locator('[data-act=delvers], [data-act=quickpay]').count(), 0, 'members cannot add or delete versements');
+step('"+ Versement" window, deletion of a versement entered by mistake');
+
 // ---------- Changing who receives the pot ----------
 await tab(A, 'tour');
 await A.waitForSelector('.hero h2:has-text("Alice")');
