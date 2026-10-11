@@ -50,7 +50,7 @@ Sans configuration, l'appli tourne en **mode démo** : les données restent dans
 
 1. Créez un projet sur [supabase.com](https://supabase.com).
 2. **SQL Editor** : collez `supabase/schema.sql` en entier et lancez-le (tables, règles RLS, temps réel, stockage des fichiers). Il peut être relancé sans danger.
-3. **Authentication → Providers → Email** : laissez l'e-mail activé. **Désactivez « Confirm email »** : les comptes par numéro de téléphone n'ont pas de boîte e-mail et ne pourraient jamais être confirmés (et les autres entrent ainsi sans attendre un message).
+3. **Authentication → Providers → Email** : laissez l'e-mail activé. Les comptes par numéro de téléphone n'ont pas de boîte e-mail : lancez une fois `supabase/phone-accounts.sql` (éditeur SQL) pour qu'ils soient confirmés d'office, quel que soit le réglage « Confirm email ».
 4. Copiez l'URL du projet et la clé **anon public** (Settings → API) dans `config.js`. Ces deux valeurs sont publiques par conception ; la sécurité vient des règles RLS.
 5. Publiez le dossier sur un hébergement statique en https (GitHub Pages, Netlify, Cloudflare Pages…). Sur téléphone : menu du navigateur → « Ajouter à l'écran d'accueil ».
 
