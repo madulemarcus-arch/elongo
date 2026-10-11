@@ -196,6 +196,7 @@ const homeB = await text(Bp);
 assert.ok(homeB.includes('Total encaissé') && homeB.includes('Votre tour'), 'member home shows the summary and their turn');
 assert.equal(await Bp.locator('main [data-act=quickpay]').count(), 0, 'a member has no payment button on the home screen');
 await shot(Bp, '04-accueil-membre');
+await tab(A, 'tour'); await tab(Bp, 'tour');   // the following steps start from the Tour screen
 step('home dashboard: summary for organizer and member');
 
 // Member detail: number of payments, money paid, how it was sent
