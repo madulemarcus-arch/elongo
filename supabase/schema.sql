@@ -267,6 +267,8 @@ end $$;
 
 revoke all on function public.tontine_preview(text), public.join_tontine(text, text, text) from public, anon;
 grant execute on function public.tontine_preview(text), public.join_tontine(text, text, text) to authenticated;
+revoke execute on function public.is_creator(uuid), public.is_owner(uuid), public.is_active(uuid), public.is_in(uuid),
+  public.topic_open(uuid, uuid), public.guard_organizers() from public, anon;
 grant execute on function public.is_creator(uuid), public.is_owner(uuid), public.is_active(uuid), public.is_in(uuid),
   public.topic_open(uuid, uuid), public.try_uuid(text) to authenticated;
 

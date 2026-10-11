@@ -171,3 +171,10 @@ select pg_temp.check('journal: un membre actif le lit', (select count(*) from jo
 select pg_temp.fails('journal: un membre simple n''écrit pas', format('insert into journal (tontine_id, by_name, text) values (%L, ''Bob'', ''faux'')', current_setting('app.t')));
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 select pg_temp.zero('journal: un intrus ne le lit pas', $$select count(*)::int from journal$$);
+
+-- helper functions: callable by signed-in users (policies need them), not by anonymous visitors
+reset role;
+select pg_temp.check('fonctions internes: fermées à anon', not exists (
+  select 1 from unnest(array['is_creator(uuid)','is_owner(uuid)','is_active(uuid)','is_in(uuid)','topic_open(uuid,uuid)','guard_organizers()']) f
+  where has_function_privilege('anon', 'public.' || f, 'execute')));
+select pg_temp.check('fonctions internes: ouvertes aux connectés', has_function_privilege('authenticated', 'public.is_owner(uuid)', 'execute'));
