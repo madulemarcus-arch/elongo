@@ -343,7 +343,7 @@
   }
 
   // ---------- Router ----------
-  const TABS = ['tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
+  const TABS = ['bord', 'tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
   const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
   function route(soft) {
     const [, r, arg] = (location.hash || '').split('/');
@@ -352,8 +352,8 @@
     else if (r === 'rejoindre' && arg) { view = 'join'; S.arg = arg; }
     else if (r === 'accueil' || !S.tid) view = 'welcome';
     else if (myRow() && myRow().status === 'pending' && !isAdmin()) view = 'pending';
-    else view = TABS.includes(r) ? r : 'tour';
-    if (view === 'organisateur' && !isAdmin()) view = 'tour';
+    else view = TABS.includes(r) ? r : 'bord';
+    if (view === 'organisateur' && !isAdmin()) view = 'bord';
     const changed = S.view !== view;
     if (changed) { ui.armed = ''; ui.copyText = ''; ui.rendered = ''; }
     S.view = view;
@@ -380,7 +380,7 @@
     let keep = null;
     if (a && v.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && focusKey(a)) keep = { k: focusKey(a), value: a.value, s: a.selectionStart, e: a.selectionEnd };
     const D = S.cfg ? derive() : null;
-    const html = ({ auth: viewAuth, welcome: viewWelcome, join: viewJoin, pending: viewPending, tour: () => viewTour(D), calendrier: () => viewCal(D), direct: () => viewLive(D), organisateur: () => viewAdmin(D) })[S.view];
+    const html = ({ auth: viewAuth, welcome: viewWelcome, join: viewJoin, pending: viewPending, bord: () => viewHome(D), tour: () => viewTour(D), calendrier: () => viewCal(D), direct: () => viewLive(D), organisateur: () => viewAdmin(D) })[S.view];
     v.innerHTML = html ? html() : '';
     ui.rendered = S.view;
     requestAnimationFrame(() => document.querySelectorAll('#view .bar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; ui.potPct = Number(i.dataset.w); }));   // the pot bar grows from its last value
@@ -691,6 +691,14 @@
     const all = !!ui.journalAll, list = S.journal.slice(0, all ? 60 : 8), more = S.journal.length > 8;
     return `<div class="journal"><h3>Journal des opérations</h3><p class="hint" style="margin-top:4px">Chaque versement, annulation et remise est inscrit ici par l'organisateur. Personne ne peut le modifier.</p>${list.length ? '<ul class="list" style="margin-top:6px">' + list.map(r => `<li class="row"><span class="evic" aria-hidden="true">🧾</span><div class="grow"><div>${esc(r.text)}</div><div class="sub">${esc(r.by_name)} · ${esc(dayLabel(r.ts))} à ${esc(clock(r.ts))}</div></div></li>`).join('') + '</ul>' : '<p class="hint" style="margin-top:8px">Aucune opération enregistrée pour l\'instant.</p>'}${more ? `<p style="margin:8px 0 0"><button type="button" class="mini" data-act="journalmore">${all ? 'Réduire' : 'Voir tout (' + Math.min(S.journal.length, 60) + ')'}</button></p>` : ''}</div>`;
   }
+  // Payments and payouts as a list of events, most recent first (live board and home screen).
+  function activityEvents(c) {
+    const ev = [];
+    S.pay.forEach(v => { const n = nameOf(v.member_id); if (!n) return; ev.push({ ts: Date.parse(v.updated_at) || 0, at: v.paid_on, ic: v.amount >= c.amount ? '✅' : '💸', t: v.amount >= c.amount ? `${n} a payé toute sa cotisation du tour ${v.round + 1} (${money(v.amount)})` : `${n} a versé ${money(v.amount)} sur ${money(c.amount)} (tour ${v.round + 1})` }); });
+    S.out.forEach(v => { const n = nameOf(v.member_id); if (n) ev.push({ ts: Date.parse(v.created_at) || 0, at: v.paid_on, ic: '🎁', t: `${n} a reçu la cagnotte (tour ${v.round + 1})` }); });
+    ev.sort((a, b) => (b.ts - a.ts) || String(b.at).localeCompare(String(a.at)));
+    return ev;
+  }
   function viewLive(D) {
     const c = S.cfg;
     if (!D.n) return '<section class="panel"><h2>Évolution en direct</h2><p class="empty">Rien à suivre pour le moment.</p></section>';
@@ -704,16 +712,64 @@
       }).join('');
       return `<tr><td>${memberLink(m)}</td>${cells}<td class="num">${got}/${Math.min(D.cur + 1, D.n)}</td></tr>`;
     }).join('');
-    const ev = [];
-    S.pay.forEach(v => { const n = nameOf(v.member_id); if (!n) return; ev.push({ ts: Date.parse(v.updated_at) || 0, at: v.paid_on, ic: v.amount >= c.amount ? '✅' : '💸', t: v.amount >= c.amount ? `${n} a payé toute sa cotisation du tour ${v.round + 1} (${money(v.amount)})` : `${n} a versé ${money(v.amount)} sur ${money(c.amount)} (tour ${v.round + 1})` }); });
-    S.out.forEach(v => { const n = nameOf(v.member_id); if (n) ev.push({ ts: Date.parse(v.created_at) || 0, at: v.paid_on, ic: '🎁', t: `${n} a reçu la cagnotte (tour ${v.round + 1})` }); });
-    ev.sort((a, b) => (b.ts - a.ts) || String(b.at).localeCompare(String(a.at)));
+    const ev = activityEvents(c);
     return `<section class="panel" id="live"><div class="livehead"><span class="dot" aria-hidden="true"></span><h2>Évolution en direct</h2></div>
       <div class="mxwrap"><table class="mx"><thead><tr><th>Membre</th>${head}<th>Payé</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="hint" style="margin-top:8px">Chaque colonne est un tour. ✓ payé en entier, un pourcentage = versement partiel, ✗ non payé, · en attente.</p>
       <div class="feed"><h3>Dernières nouvelles</h3>${ev.length ? '<ul class="list">' + ev.slice(0, 8).map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub" title="${e.at ? esc(fmtDate(e.at)) : ''}">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour l\'instant.</p>'}</div>${journalPanel()}</section>`;
   }
 
+  // ----- home: a summary of everything going on in the tontine -----
+  function viewHome(D) {
+    const c = S.cfg, hi = (chatName() || '').split(' ')[0], me = myRow(), mi = me ? S.members.findIndex(m => m.id === me.id) : -1;
+    const header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
+      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}.</p></header>`;
+    if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
+    const pot = c.amount * D.n, done = Math.min(D.cur, D.n), cycle = Math.round(100 * done / D.n);
+    let total = 0; S.pay.forEach(v => { total += Number(v.amount) || 0; });
+    let given = 0; S.out.forEach(() => { given += pot; });
+    const tile = (ic, label, val, sub) => `<div class="kpi"><span class="kic" aria-hidden="true">${ic}</span><div class="klbl">${label}</div><div class="kval num">${val}</div>${sub ? `<div class="ksub">${sub}</div>` : ''}</div>`;
+    const over = D.cur >= D.n;
+    let now = '';
+    if (over) now = `<section class="panel"><h2>Le cycle est terminé</h2><p class="hint" style="margin-top:6px">Les ${D.n} membres ont tous reçu la cagnotte. Total remis : ${money(given)}.</p></section>`;
+    else {
+      const due = roundDate(c, D.cur), got = D.got, pct = Math.min(100, Math.round(100 * got / pot)), late = dayDiff(due, todayISO()) < 0, left = D.n - D.paidIds.size;
+      const status = got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours';
+      const alerts = [];
+      if (isAdmin()) {
+        if (S.pending.length) alerts.push(`<a class="alert" href="#/organisateur">👋 <b>${S.pending.length}</b> demande${S.pending.length > 1 ? 's' : ''} d'inscription à valider</a>`);
+        if (left && late) alerts.push(`<a class="alert warn" href="#/tour">⏰ <b>${left}</b> cotisation${left > 1 ? 's' : ''} en retard (${money(pot - got)} à encaisser)</a>`);
+        else if (left) alerts.push(`<a class="alert" href="#/tour">💸 <b>${left}</b> membre${left > 1 ? 's' : ''} n'${left > 1 ? 'ont' : 'a'} pas encore tout versé</a>`);
+        else if (got >= pot) alerts.push(`<a class="alert ok" href="#/tour">🎁 Cagnotte complète : prête à être remise à ${esc(D.benef.name)}</a>`);
+      }
+      let mine = '';
+      if (mi >= 0) {
+        const rest = c.amount - (D.amt.get(me.id) || 0), pu = punctuality(me);
+        mine = mi < D.cur ? `Vous avez reçu votre part au tour ${mi + 1}.`
+          : mi === D.cur ? `<b>C'est votre tour</b> : ${money(pot)} à recevoir le ${esc(fmtDate(due))}.`
+          : `Votre tour : <b>${esc(fmtShort(roundEnd(c, mi)))}</b> (${esc(rel(roundEnd(c, mi)))}), tour ${mi + 1} sur ${D.n}.`;
+        mine += D.paidIds.has(me.id) ? ' Votre cotisation de ce tour est payée ✅' : ` Il vous reste <b>${money(rest)}</b> à verser${late ? ' (en retard)' : ''}.`;
+        if (pu.streak >= 1) mine += ` ⭐ ${pu.streak} tour${pu.streak > 1 ? 's' : ''} payé${pu.streak > 1 ? 's' : ''} à temps d'affilée.`;
+        mine = `<div class="mine${D.paidIds.has(me.id) ? '' : late ? ' late' : ''}">${mine}</div>`;
+      }
+      now = `<section class="hero home-now"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
+        <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${status}</span></div>
+        <div class="pot"><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div>
+        <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}" style="width:${ui.potPct == null ? 0 : ui.potPct}%"></i></div>
+        <div class="lbl num">${money(got)} encaissés · ${D.paidIds.size}/${D.n} membres ont tout versé</div></div>${mine}</section>${alerts.length ? '<div class="alerts">' + alerts.join('') + '</div>' : ''}`;
+    }
+    const kpis = `<section class="kpis" aria-label="Chiffres clés">${tile('💰', 'Total encaissé', money(total), 'depuis le début')}
+      ${tile('🎁', 'Cagnottes remises', `${done}/${D.n}`, given ? money(given) + ' remis' : 'aucune pour l\'instant')}
+      ${tile('👥', 'Membres', String(D.n), isAdmin() && S.pending.length ? S.pending.length + ' en attente' : 'actifs')}
+      ${tile('📅', 'Cycle', cycle + ' %', over ? 'terminé' : (D.n - D.cur) + ' tour' + (D.n - D.cur > 1 ? 's' : '') + ' restant' + (D.n - D.cur > 1 ? 's' : ''))}</section>`;
+    const next = over ? '' : `<section class="panel"><div class="chead"><h2>Prochains tours</h2><a class="lnk" href="#/calendrier">Calendrier</a></div><ul class="list">${S.members.slice(D.cur + 1, D.cur + 4).map((m, k) => {
+      const r = D.cur + 1 + k; return `<li class="row"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}${me && m.id === me.id ? ' <span class="pill ok">Vous</span>' : ''}</div><div class="sub">${esc(turnDates(c, r))}</div></div><span class="sub">${esc(rel(roundEnd(c, r)))}</span></li>`; }).join('') || '<li class="hint">Aucun tour après celui-ci.</li>'}</ul></section>`;
+    const ev = activityEvents(c).slice(0, 6);
+    const feed = `<section class="panel"><div class="chead"><h2>Activité récente</h2><a class="lnk" href="#/direct">Tout voir</a></div>${ev.length ? '<ul class="list">' + ev.map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour le moment : les versements et les remises apparaîtront ici.</p>'}</section>`;
+    const unread = totalUnread();
+    const shortcuts = `<nav class="shortcuts" aria-label="Raccourcis">${isAdmin() && !over ? '<button type="button" class="primary" data-act="quickpay">➕ Enregistrer un versement</button>' : ''}<a class="btn" href="#/tour">Voir le tour</a><a class="btn" href="#/discussion">💬 Discussion${unread ? ` <b class="cnt">${unread}</b>` : ''}</a></nav>`;
+    return header + now + shortcuts + kpis + next + feed;
+  }
   // ----- admin -----
   function viewAdmin(D) {
     const c = S.cfg;
@@ -1149,7 +1205,7 @@
   // The open tontine no longer exists (deleted by its creator): go to another one, or to the welcome screen.
   async function afterTontineGone() {
     await loadTontines(); pickTontine(); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine();
-    go(S.tid ? (isAdmin() ? '#/organisateur' : '#/tour') : '#/accueil');
+    go(S.tid ? '#/bord' : '#/accueil');
   }
   async function pickAfterJoin(tid) {
     await loadTontines(); S.tid = tid; S.cfg = S.tontines.find(t => t.id === tid) || null;
