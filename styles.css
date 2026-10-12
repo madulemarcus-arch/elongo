@@ -391,3 +391,7 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .msg .meta { flex-wrap: wrap; }
 .msg .meta button.link[data-act="reply"] { opacity: 1; font-weight: 700; font-size: .85rem; padding: 6px 8px; margin: -4px 0; color: var(--accent); min-height: 32px; }
 .msg.me .meta button.link[data-act="reply"] { color: inherit; }
+
+/* organizer lists: the name gets the full line (next to the number), buttons and phone wrap underneath instead of squeezing it */
+.row.memrow > .grow { flex: 1 1 calc(100% - 50px); }
+.row.memrow { row-gap: 8px; }
