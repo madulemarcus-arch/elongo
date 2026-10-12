@@ -124,8 +124,10 @@ select pg_temp.zero('intrus ne lit pas les fichiers', $$select count(*)::int fro
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select pg_temp.check('organisateur lit les fichiers', (select count(*) from storage.objects) = 1);
 
--- co-organizer: only the creator names one; a co-organizer works like the creator except for naming and deleting the tontine
+-- co-organizer: named by an organizer, then has every right of the principal administrator
 reset role;
+create function pg_temp.dry(stmt text) returns int language plpgsql as $$
+declare n int; begin begin execute stmt; get diagnostics n = row_count; raise exception 'undo'; exception when raise_exception then null; end; return n; end $$;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.zero('membre ne se nomme pas organisateur', $$with u as (update members set is_organizer = true where user_id = '00000000-0000-0000-0000-00000000000b' returning 1) select count(*)::int from u$$);
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
@@ -135,10 +137,10 @@ select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.check('co-organisateur lit les téléphones', (select count(*) from contacts) >= 1);
 update tontines set name = 'Tontine renommée';
 select pg_temp.check('co-organisateur modifie les réglages', (select name from tontines) = 'Tontine renommée');
-select pg_temp.fails('co-organisateur ne change pas le créateur', $$update tontines set owner_id = '00000000-0000-0000-0000-00000000000b'$$);
-select pg_temp.zero('co-organisateur ne supprime pas la tontine', $$with d as (delete from tontines returning 1) select count(*)::int from d$$);
-select pg_temp.fails('co-organisateur ne nomme personne', $$update members set is_organizer = true where name = 'Alice'$$);
-select pg_temp.fails('co-organisateur ne se retire pas lui-même', $$update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b'$$);
+select pg_temp.fails('co-organisateur ne donne pas la tontine à un tiers', $$update tontines set owner_id = '00000000-0000-0000-0000-00000000000c'$$);
+select pg_temp.check('co-organisateur peut supprimer la tontine', pg_temp.dry('delete from tontines') = 1);
+select pg_temp.check('co-organisateur peut retirer un organisateur', pg_temp.dry($$update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b'$$) = 1);
+select pg_temp.fails('un organisateur reste lié à un compte', $$update members set is_organizer = true where name = 'Alice'$$);
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 update members set is_organizer = false where user_id = '00000000-0000-0000-0000-00000000000b';
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
@@ -179,7 +181,7 @@ select pg_temp.check('fonctions internes: fermées à anon', not exists (
   where has_function_privilege('anon', 'public.' || f, 'execute')));
 select pg_temp.check('fonctions internes: ouvertes aux connectés', has_function_privilege('authenticated', 'public.is_owner(uuid)', 'execute'));
 
--- deleting a tontine: the creator only (a co-organizer cannot), everything attached goes with it
+-- deleting a tontine: an organizer only (a plain member cannot), everything attached goes with it
 reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 do $$ declare n int; begin delete from tontines; get diagnostics n = row_count; perform set_config('app.n', n::text, false); end $$;
@@ -189,3 +191,22 @@ do $$ declare n int; begin delete from tontines; get diagnostics n = row_count; 
 select pg_temp.check('suppression: le créateur supprime la tontine', current_setting('app.n')::int = 1);
 reset role;
 select pg_temp.check('suppression: membres, versements et journal partent avec', (select count(*) from members) + (select count(*) from payments) + (select count(*) from journal) = 0);
+
+-- the principal administrator can be removed by another organizer: the actor takes the ownership, the old principal loses access
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+insert into tontines (name, amount, start_date) values ('Tontine deux', 5000, '2026-01-01');
+reset role;
+select set_config('app.t2', (select id::text from tontines where name = 'Tontine deux'), false) as t2 \gset
+insert into members (tontine_id, user_id, name, status, is_organizer, position) values
+  (current_setting('app.t2')::uuid, '00000000-0000-0000-0000-00000000000a', 'Orga', 'active', false, 1),
+  (current_setting('app.t2')::uuid, '00000000-0000-0000-0000-00000000000b', 'Bob', 'active', true, 2);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+select pg_temp.zero('un intrus ne prend pas la tontine', format('with u as (update tontines set owner_id = %L where id = %L returning 1) select count(*)::int from u', '00000000-0000-0000-0000-00000000000c', current_setting('app.t2')));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+update tontines set owner_id = '00000000-0000-0000-0000-00000000000b' where id = current_setting('app.t2')::uuid;
+delete from members where tontine_id = current_setting('app.t2')::uuid and user_id = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.check('le co-organisateur est devenu le principal', (select owner_id from tontines where id = current_setting('app.t2')::uuid) = '00000000-0000-0000-0000-00000000000b');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+select pg_temp.zero('l''ancien principal n''a plus accès', $$select count(*)::int from tontines where name = 'Tontine deux'$$);
+select pg_temp.zero('l''ancien principal ne modifie plus rien', $$with u as (update tontines set name = 'pris' where name = 'Tontine deux' returning 1) select count(*)::int from u$$);
