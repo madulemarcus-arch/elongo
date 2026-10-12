@@ -330,14 +330,14 @@ await A.waitForSelector('li:has-text("Chantal") .pill:has-text("Organisateur")')
 await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'visible' });
 await Bp.click('.tabbar a[data-tab=organisateur]');
 await Bp.waitForSelector('h2:has-text("Espace organisateur")');
-assert.equal(await Bp.locator('[data-act=orga]').count(), 0, 'only the creator names organizers');
+assert.equal(await Bp.locator('[data-act=orga]').count(), 0, 'nobody else has an account to name yet');
 assert.equal(await A.locator('li:has-text("Alice") [data-act=orga]').count(), 0, 'a member without account cannot be named');
 await A.click('li:has-text("Chantal") [data-act=orga]');
 await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
 await A.waitForSelector('li:has-text("Chantal") .pill:has-text("Organisateur")', { state: 'detached' });
 await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'hidden' });
 await A.click('.tabbar a[data-tab=tour]'); await Bp.click('.tabbar a[data-tab=tour]');
-step('co-organizer: named by the creator, gets the organizer space, can be removed');
+step('co-organizer: named by an organizer, gets the organizer space, can be removed');
 
 // ---------- Link a new account to a member added by hand ----------
 const Cp = await ctx.newPage();
@@ -778,19 +778,34 @@ await A.waitForSelector('.hero h2:has-text("Chantal")');
 assert.equal(await Bp.locator('[data-act=swap]').count(), 0, 'members cannot change the order');
 step('change the beneficiary: swap, pass the turn, message for the group, journal');
 
-// ---------- Delete the tontine: creator only, name typed to confirm, everyone else is sent back to the welcome screen ----------
+// ---------- Administrators: every organizer has the principal's rights, including removing the principal ----------
 await A.goto(url + '#/organisateur');
-await A.waitForSelector(d$('del.name'));
-assert.equal(await Bp.locator('[data-act=deltontine]').count(), 0, 'a member cannot delete the tontine');
-await A.fill(d$('del.name'), 'autre nom');
-await A.click('[data-act=deltontine]');
-await A.waitForSelector('#toast.show:has-text("nom exact")');
-assert.ok(await A.locator(d$('del.name')).count(), 'wrong name: nothing is deleted');
-await A.fill(d$('del.name'), 'Tontine des amis');
-await A.click('[data-act=deltontine]');
-await A.waitForFunction(() => location.hash === '#/accueil');
+await A.waitForSelector('li:has-text("Chantal") [data-act=orga]');
+assert.equal(await Bp.locator('[data-act=deltontine]').count(), 0, 'a plain member cannot delete the tontine');
+await A.click('li:has-text("Chantal") [data-act=orga]');
+await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
+await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'visible' });
+await Bp.click('.tabbar a[data-tab=organisateur]');
+await Bp.waitForSelector('h2:has-text("Espace organisateur")');
+assert.ok(await Bp.locator('li:has-text("Marcus") .pill:has-text("Organisateur principal")').count(), 'the principal administrator is labelled');
+assert.equal(await Bp.locator('li:has-text("Marcus") [data-act=orga]').count(), 0, 'the principal is not turned into a plain organizer');
+assert.equal(await Bp.locator(d$('del.name')).count(), 1, 'a co-administrator can delete the tontine too');
+await Bp.fill(d$('del.name'), 'autre nom');
+await Bp.click('[data-act=deltontine]');
+await Bp.waitForSelector('#toast.show:has-text("nom exact")');
+assert.ok(await Bp.locator(d$('del.name')).count(), 'wrong name: nothing is deleted');
+await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]');
+await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]:has-text("Confirmer")');
+await Bp.waitForSelector('li:has-text("Marcus")', { state: 'detached' });
+await A.waitForFunction(() => location.hash === '#/accueil');   // the old principal has lost access
+assert.equal(await A.locator('.tabbar a[data-tab=organisateur]').isVisible(), false, 'the removed principal has no organizer space any more');
+step('administrator removes the principal administrator and takes his place');
+
+// ---------- Delete the tontine: any organizer, name typed to confirm, everyone else is sent back to the welcome screen ----------
+await Bp.fill(d$('del.name'), 'Tontine des amis');
+await Bp.click('[data-act=deltontine]');
 await Bp.waitForFunction(() => location.hash === '#/accueil');
-step('tontine deleted by its creator: gone for everyone');
+step('tontine deleted by an administrator');
 
 // ---------- Service worker: a push message becomes a notification ----------
 // A fresh browser context so that no app window is open (the worker shows nothing while the app is in front).

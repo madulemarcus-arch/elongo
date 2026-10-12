@@ -178,7 +178,7 @@ end $$;
 create policy tontines_select on public.tontines for select to authenticated using (owner_id = auth.uid() or public.is_in(id));
 create policy tontines_insert on public.tontines for insert to authenticated with check (owner_id = auth.uid());
 create policy tontines_update on public.tontines for update to authenticated using (public.is_owner(id)) with check (public.is_owner(id));
-create policy tontines_delete on public.tontines for delete to authenticated using (owner_id = auth.uid());
+create policy tontines_delete on public.tontines for delete to authenticated using (public.is_owner(id));
 
 create policy members_select on public.members for select to authenticated
   using (public.is_active(tontine_id) or user_id = auth.uid());
@@ -220,22 +220,21 @@ create policy journal_insert on public.journal for insert to authenticated with 
 create policy push_own on public.push_subscriptions for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
--- Seul le créateur nomme ou retire un organisateur, et personne ne change le créateur de la tontine.
+-- Tous les organisateurs ont les mêmes droits : ils nomment ou retirent un organisateur, suppriment la tontine et peuvent
+-- retirer l'organisateur principal. Retirer le principal = prendre sa place (owner_id passe à celui qui agit) puis supprimer
+-- sa ligne de membre ; personne d'autre qu'un organisateur ne peut changer owner_id, et jamais au profit d'un tiers.
 -- (auth.uid() est nul dans l'éditeur SQL de Supabase : l'administrateur du projet n'est pas bloqué.)
 create or replace function public.guard_organizers() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then return coalesce(new, old); end if;
   if tg_table_name = 'tontines' then
-    if new.owner_id is distinct from old.owner_id then raise exception 'owner_locked'; end if;
+    if new.owner_id is distinct from old.owner_id and (new.owner_id <> auth.uid() or not public.is_owner(old.id)) then raise exception 'owner_locked'; end if;
     return new;
   end if;
   if tg_op = 'DELETE' then
-    if old.is_organizer and not public.is_creator(old.tontine_id) then raise exception 'creator_only'; end if;
     return old;
   end if;
-  if new.is_organizer is distinct from (case when tg_op = 'INSERT' then false else old.is_organizer end)
-     and not public.is_creator(new.tontine_id) then raise exception 'creator_only'; end if;
   if new.is_organizer and (new.user_id is null or new.status <> 'active') then raise exception 'organizer_needs_account'; end if;
   return new;
 end $$;

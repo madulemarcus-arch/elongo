@@ -118,6 +118,7 @@
   };
   const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
+  // The principal administrator is the account in tontines.owner_id; every organizer (isAdmin) has the same rights, including over the principal.
   const isCreator = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
   const myRow = () => S.user ? S.allMembers.find(m => m.user_id === S.user.id) : null;
   // organizer = creator, or an active member the creator named organizer
@@ -237,7 +238,7 @@
   async function loadTable(name) {
     const tid = S.tid; if (!tid) return;
     const eq = { tontine_id: tid };
-    if (name === 'tontines') { await loadTontines(); if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast('Cette tontine a été supprimée par son créateur.'); await afterTontineGone(); } } return; }
+    if (name === 'tontines') { await loadTontines(); if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast("Vous n'avez plus accès à cette tontine (supprimée, ou vous en avez été retiré)."); await afterTontineGone(); } } return; }
     if (name === 'contacts' && !isAdmin()) return;
     if (name === 'journal') { try { const jr = await selectCached('journal', tid, { eq, order: [['created_at', false]], limit: 100 }); if (jr) S.journal = jr.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
     const rows = await selectCached(name, tid, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
@@ -790,7 +791,7 @@
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
-    const del = isCreator() ? `<div><h3>Supprimer la tontine</h3><p class="hint" style="margin:6px 0 10px">Efface définitivement « ${esc(c.name)} » pour tout le monde : membres, versements, calendrier, discussion et journal. Pensez à exporter le PDF ou le fichier Excel avant. Seul le créateur peut le faire.</p>
+    const del = isAdmin() ? `<div><h3>Supprimer la tontine</h3><p class="hint" style="margin:6px 0 10px">Efface définitivement « ${esc(c.name)} » pour tout le monde : membres, versements, calendrier, discussion et journal. Pensez à exporter le PDF ou le fichier Excel avant. Tous les organisateurs peuvent le faire.</p>
       <div class="grid"><label class="f">Pour confirmer, écrivez le nom exact de la tontine<input data-d="del.name" value="${esc(dv('del.name', ''))}" autocomplete="off" maxlength="60" placeholder="${esc(c.name)}"></label>
       <button class="danger" type="button" data-act="deltontine">Supprimer définitivement</button></div></div>` : '';
     const reqs = `<div><h3>Demandes d'inscription</h3><ul class="list" style="margin-top:8px">${S.pending.length ? S.pending.map(r => `<li class="row wrap"><div class="grow"><div class="name">${esc(r.name)}</div><div class="sub">${esc(S.contacts.get(r.id) || 'Sans numéro')}</div></div>
@@ -800,12 +801,12 @@
       ${S.members.some(m => !m.user_id) ? `<p class="hint" style="margin-top:6px">Les membres « sans compte » ont été ajoutés à la main. Pour pouvoir en nommer un organisateur, il doit rejoindre la tontine avec le lien d'invitation et créer son compte. Quand vous acceptez sa demande, choisissez « C'est : » suivi de son nom pour relier son compte à sa ligne, au lieu de créer un doublon.</p>` : ''}
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
-        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
-          ${isCreator() && m.user_id && m.user_id !== S.user.id ? `<button class="mini${ui.armed === 'orga:' + m.id ? ' armed' : ''}" data-act="orga" data-id="${esc(m.id)}">${ui.armed === 'orga:' + m.id ? 'Confirmer' : m.is_organizer ? "Retirer l'organisateur" : 'Nommer organisateur'}</button>` : ''}
+        return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.user_id && m.user_id === c.owner_id ? ' <span class="pill ok">Organisateur principal</span>' : m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
+          ${isAdmin() && m.user_id && m.user_id !== S.user.id && m.user_id !== c.owner_id ? `<button class="mini${ui.armed === 'orga:' + m.id ? ' armed' : ''}" data-act="orga" data-id="${esc(m.id)}">${ui.armed === 'orga:' + m.id ? 'Confirmer' : m.is_organizer ? "Retirer l'organisateur" : 'Nommer organisateur'}</button>` : ''}
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
           ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
           <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
-          <button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}</li>`;
+          ${m.user_id && m.user_id === c.owner_id && m.user_id !== S.user.id ? `<button class="mini danger${ui.armed === 'rmp:' + m.id ? ' armed' : ''}" data-act="rmprincipal" data-id="${esc(m.id)}">${ui.armed === 'rmp:' + m.id ? "Confirmer : prendre sa place" : "Retirer l'organisateur principal"}</button>` : `<button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}`}</li>`;
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
       <input data-d="a.phone" value="${esc(dv('a.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone (facultatif)" aria-label="Téléphone du nouveau membre"><button class="primary" type="submit">Ajouter</button></form></div>`;
@@ -1109,11 +1110,20 @@
         await B.update('members', { status: 'active', position: S.members.reduce((x, m) => Math.max(x, m.position), 0) + 1 }, { id });
         await loadTable('members'); audit(r.name + ' accepté dans la tontine'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
       } else if (act === 'orga') {
-        const m = S.members.find(x => x.id === id); if (!m || !isCreator()) return;
+        const m = S.members.find(x => x.id === id); if (!m || !isAdmin() || m.user_id === S.cfg.owner_id) return;
         if (ui.armed !== 'orga:' + id) { ui.armed = 'orga:' + id; render(); return; }
         ui.armed = ''; await B.update('members', { is_organizer: !m.is_organizer }, { id }); await loadTable('members');
         audit(m.name + (m.is_organizer ? " n'est plus organisateur" : ' nommé organisateur'));
         toast(m.is_organizer ? m.name + ' est maintenant organisateur.' : m.name + " n'est plus organisateur.");
+      } else if (act === 'rmprincipal') {
+        // Removing the principal administrator: the acting organizer takes the ownership, then the old principal's member row goes.
+        const m = S.members.find(x => x.id === id); if (!m || !isAdmin() || !m.user_id || m.user_id !== S.cfg.owner_id || m.user_id === S.user.id) return;
+        if (ui.armed !== 'rmp:' + id) { ui.armed = 'rmp:' + id; render(); return; }
+        ui.armed = ''; const gone = m.name;
+        await B.update('tontines', { owner_id: S.user.id }, { id: S.tid });
+        await B.remove('members', { id });
+        await loadTable('tontines'); await loadTable('members'); await loadTable('payments'); audit(gone + ' retiré : organisateur principal remplacé');
+        toast(gone + " n'est plus dans la tontine. Vous êtes l'organisateur principal.");
       } else if (act === 'reject') { await B.remove('members', { id }); await loadTable('members');
       } else if (act === 'copy') {
         ui.copyText = reminderText(S.cfg, D);
@@ -1207,7 +1217,7 @@
         await loadTable('members');
       } else if (act === 'deltontine') {
         const typed = ((document.querySelector('input[data-d="del.name"]') || {}).value || '').trim();
-        if (!isCreator() || typed !== S.cfg.name) { toast('Écrivez le nom exact de la tontine pour confirmer.'); return; }
+        if (!isAdmin() || typed !== S.cfg.name) { toast('Écrivez le nom exact de la tontine pour confirmer.'); return; }
         const gone = S.tid, files = S.msgs.filter(m => m.att).map(m => m.att.path);
         const rows = await B.remove('tontines', { id: gone });
         if (!rows || !rows.length) { toast('Suppression refusée : seul le créateur peut supprimer la tontine.'); return; }
