@@ -803,10 +803,11 @@
         const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.user_id && m.user_id === c.owner_id ? ' <span class="pill ok">Organisateur principal</span>' : m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
           ${isAdmin() && m.user_id && m.user_id !== S.user.id && m.user_id !== c.owner_id ? `<button class="mini${ui.armed === 'orga:' + m.id ? ' armed' : ''}" data-act="orga" data-id="${esc(m.id)}">${ui.armed === 'orga:' + m.id ? 'Confirmer' : m.is_organizer ? "Retirer l'organisateur" : 'Nommer organisateur'}</button>` : ''}
+          ${m.user_id && m.user_id === c.owner_id && m.user_id !== S.user.id ? `<button class="mini danger${ui.armed === 'rmp:' + m.id ? ' armed' : ''}" data-act="rmprincipal" data-id="${esc(m.id)}">${ui.armed === 'rmp:' + m.id ? "Confirmer : prendre sa place" : "Retirer l'organisateur principal"}</button>` : ''}
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
           ${served ? `<span class="pill done">Servi${ov && ov.paid_on ? ' le ' + esc(fmtShort(ov.paid_on)) : ''}</span><button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Pas encore servi'}</button>` : `<button class="mini" data-act="up" data-id="${esc(m.id)}" aria-label="Monter ${esc(m.name)}"${i <= D.cur || S.out.has(i - 1) ? ' disabled' : ''}>↑</button>
           <button class="mini" data-act="down" data-id="${esc(m.id)}" aria-label="Descendre ${esc(m.name)}"${i >= D.n - 1 || S.out.has(i + 1) ? ' disabled' : ''}>↓</button>
-          ${m.user_id && m.user_id === c.owner_id && m.user_id !== S.user.id ? `<button class="mini danger${ui.armed === 'rmp:' + m.id ? ' armed' : ''}" data-act="rmprincipal" data-id="${esc(m.id)}">${ui.armed === 'rmp:' + m.id ? "Confirmer : prendre sa place" : "Retirer l'organisateur principal"}</button>` : `<button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}`}</li>`;
+          <button class="mini danger${ui.armed === 'rm:' + m.id ? ' armed' : ''}" data-act="rm" data-id="${esc(m.id)}">${ui.armed === 'rm:' + m.id ? 'Confirmer' : 'Retirer'}</button>`}</li>`;
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
       <input data-d="a.phone" value="${esc(dv('a.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone (facultatif)" aria-label="Téléphone du nouveau membre"><button class="primary" type="submit">Ajouter</button></form></div>`;
@@ -1114,7 +1115,7 @@
         if (ui.armed !== 'orga:' + id) { ui.armed = 'orga:' + id; render(); return; }
         ui.armed = ''; await B.update('members', { is_organizer: !m.is_organizer }, { id }); await loadTable('members');
         audit(m.name + (m.is_organizer ? " n'est plus organisateur" : ' nommé organisateur'));
-        toast(m.is_organizer ? m.name + ' est maintenant organisateur.' : m.name + " n'est plus organisateur.");
+        toast(m.is_organizer ? m.name + " n'est plus organisateur." : m.name + ' est maintenant organisateur.');
       } else if (act === 'rmprincipal') {
         // Removing the principal administrator: the acting organizer takes the ownership, then the old principal's member row goes.
         const m = S.members.find(x => x.id === id); if (!m || !isAdmin() || !m.user_id || m.user_id !== S.cfg.owner_id || m.user_id === S.user.id) return;
