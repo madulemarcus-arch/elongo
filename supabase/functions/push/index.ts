@@ -90,7 +90,7 @@ export async function handle(req: Request, deps: any): Promise<Response> {
       if (!t) return json({ sent: 0, failed: 0, removed: 0 });
       const topic = m.topic_id ? await deps.getTopic(m.topic_id) : null;
       const att = m.att && m.att.kind;
-      const text = m.body ? clip(String(m.body), 110) : att === 'image' ? '📷 Photo' : att === 'audio' ? '🎤 Message vocal' : '📄 Document';
+      const text = m.body ? clip(String(m.body), 110) : att === 'image' ? '📷 Photo' : att === 'video' ? '🎬 Vidéo' : att === 'audio' ? '🎤 Message vocal' : '📄 Document';
       const to = await deps.audience(t.id); to.delete(uid);
       return json(await deliver(deps, {
         title: `${m.author_name} · ${t.name}`, body: (topic ? topic.title + ' : ' : '') + text,

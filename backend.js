@@ -10,7 +10,7 @@
   // ---------- Supabase ----------
   function supabaseBackend() {
     const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
-    const B = { mode: 'supabase', maxFile: 5 * 1024 * 1024, user: null };
+    const B = { mode: 'supabase', maxFile: 5 * 1024 * 1024, maxVideo: 20 * 1024 * 1024, user: null };
     const listeners = new Set();
     const unwrap = ({ data, error }) => { if (error) throw error; return data; };
     const setUser = s => { B.user = s && s.user ? { id: s.user.id, email: s.user.email } : null; };
@@ -66,7 +66,7 @@
   // ---------- Demo ----------
   function demoBackend() {
     const KEY = 'lisanga.demo.v1', FKEY = 'lisanga.demo.files.';
-    const B = { mode: 'demo', maxFile: 1500000, user: null };
+    const B = { mode: 'demo', maxFile: 1500000, maxVideo: 1500000, user: null };
     const listeners = new Set(), subs = new Set();
     const bc = 'BroadcastChannel' in window ? new BroadcastChannel('lisanga-demo') : null;
     const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : r & 3 | 8).toString(16); }));
