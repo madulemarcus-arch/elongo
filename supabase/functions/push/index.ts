@@ -6,6 +6,7 @@
 //        { kind: 'payout',   tontine_id, round }              cagnotte remise (organisateur)
 //        { kind: 'message',  message_id }                     nouveau message (auteur du message)
 //      Le texte de la notification est recomposé ici à partir de la base : un client ne peut pas envoyer de texte libre.
+//        { kind: 'call',     tontine_id, to }                 appel vocal : notifie le destinataire (appelant et destinataire membres de la tontine)
 //        { kind: 'remind',   tontine_id }                     rappel manuel aux membres qui n'ont pas tout versé (organisateur,
 //                                                             une fois toutes les 3 heures au plus ; répond qui a été prévenu et qui ne l'a pas pu)
 //   2. par la tâche planifiée de Supabase (pg_cron), avec l'en-tête x-cron-secret (facultatif, non utilisé en production) :
@@ -97,6 +98,14 @@ export async function handle(req: Request, deps: any): Promise<Response> {
         url: './#/discussion', tag: `msg-${t.id}-${m.topic_id || 'general'}`,
       }, to));
     }
+    if (body.kind === 'call') {   // someone starts a voice call: the callee gets a notification (the call itself is signalled over Realtime)
+      const t = await deps.getTontine(body.tontine_id);
+      if (!t) return json({ error: 'forbidden' }, 403);
+      const aud = await deps.audience(t.id);
+      if (!aud.has(uid) || !body.to || body.to === uid || !aud.has(body.to)) return json({ error: 'forbidden' }, 403);   // both must belong to the tontine
+      const name = (await deps.nameOfUser(t.id, uid)) || 'Un membre';
+      return json(await deliver(deps, { title: `${name} · ${t.name}`, body: '📞 Appel vocal : ouvrez Elongo pour répondre', url: './#/bord', tag: `call-${t.id}-${uid}` }, new Set([body.to])));
+    }
     return json({ error: 'unknown_kind' }, 400);
   } catch (e) {
     return json({ error: 'server_error', detail: String((e as any)?.message || e) }, 500);
@@ -183,6 +192,7 @@ if (D && D.serve) {
       getTopic: (id: string) => one(admin.from('topics').select('title').eq('id', id).maybeSingle()),
       isOrganizer: async (t: any, uid: string) => t.owner_id === uid || !!(await one(admin.from('members').select('id').eq('tontine_id', t.id).eq('user_id', uid).eq('status', 'active').eq('is_organizer', true).maybeSingle())),
       recentReminder: async (tid: string, since: string) => { const { data, error } = await admin.from('journal').select('id').eq('tontine_id', tid).like('text', 'Rappel envoyé%').gte('created_at', since).limit(1); if (error) return false; return (data || []).length > 0; },
+      nameOfUser: async (tid: string, uid: string) => { const m = await one(admin.from('members').select('name').eq('tontine_id', tid).eq('user_id', uid).maybeSingle()); return m ? m.name : ''; },
       audience: async (tid: string) => {
         const t = await one(admin.from('tontines').select('owner_id').eq('id', tid).maybeSingle());
         const ms = await rows(admin.from('members').select('user_id').eq('tontine_id', tid).eq('status', 'active').not('user_id', 'is', null));

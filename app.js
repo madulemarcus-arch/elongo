@@ -278,6 +278,7 @@
   }
   async function openTontine() {
     if (unsub) { unsub(); unsub = null; }
+    closeSignal();
     S.loaded = false; ui.known = null; ui.seen = null;
     Object.assign(S, { allMembers: [], members: [], pending: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [], reactions: [] });
     if (!S.tid) return;
@@ -285,9 +286,10 @@
     await Promise.all(ALL.map(loadTable));
     S.loaded = true;
     unsub = B.subscribe(S.tid, queue);
+    openSignal();
   }
   async function bootstrap() {
-    if (!S.user) { if (unsub) unsub(); unsub = null; Object.assign(S, { tontines: [], tid: null, cfg: null, loaded: false }); route(); return; }
+    if (!S.user) { if (unsub) unsub(); unsub = null; closeSignal(); Object.assign(S, { tontines: [], tid: null, cfg: null, loaded: false }); route(); return; }
     try { await loadTontines(); pickTontine(); await openTontine(); } catch (e) { toast(friendly(e)); }
     route();
     if (S.user) refreshPush();
@@ -343,6 +345,115 @@
     return ['🧾 REÇU · ' + c.name, 'Membre : ' + name, 'Montant : ' + f(x.a), 'Moyen : ' + methodName(x.m), 'Tour : ' + (x.round + 1), 'Date : ' + (x.at ? fmtShort(x.at) : '-'),
       'Total versé pour ce tour : ' + f(x.cum) + ' sur ' + f(c.amount) + (left > 0 ? ', reste ' + f(left) : ' (complet ✅)'), x.by ? 'Enregistré par : ' + x.by : ''].filter(Boolean).join('\n');
   }
+
+  // ---------- Voice calls ----------
+  // One-to-one voice calls inside a tontine (WebRTC). Signalling goes through a Realtime broadcast channel of the tontine (private:
+  // only its active members can join, see supabase/calls.sql); the audio travels straight between the two phones.
+  // Without a TURN server (config.js: iceServers) some mobile networks cannot connect: the call then ends with a clear message.
+  const ICE_SERVERS = (window.LISANGA_CONFIG && window.LISANGA_CONFIG.iceServers) || [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  const callsSupported = () => !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  let sig = null, callSt = null, callTimer = 0, callTick = 0, ringTimer = 0, ringCtx = null;
+  const callEnded = new Set();   // ids of finished calls: the caller keeps re-sending its invitation for a while, those repeats are ignored
+  function openSignal() { closeSignal(); if (S.tid && S.user && B.signal) sig = B.signal(S.tid, onSignal); }
+  function closeSignal() { if (callSt) endCall(true, 'ended'); if (sig) { sig.leave(); sig = null; } }
+  const sendSig = (k, extra) => { if (sig && callSt) sig.send(Object.assign({ k, id: callSt.id, to: callSt.peer.uid, from: S.user.id, name: chatName() || 'Un membre' }, extra || {})); };
+  function ringStart() {
+    ringStop();
+    const beep = () => {
+      try { ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 440; g.gain.value = .15; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + .35); } catch (e) { /* no sound before a first tap */ }
+      buzz([300, 200, 300]);
+    };
+    beep(); ringTimer = setInterval(beep, 2200);
+  }
+  const ringStop = () => { clearInterval(ringTimer); ringTimer = 0; };
+  async function micStream() { return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  async function startCall(uid, name) {
+    if (callSt) { toast('Un appel est déjà en cours.'); return; }
+    if (!callsSupported()) { toast("Les appels vocaux ne sont pas disponibles sur cet appareil."); return; }
+    if (!sig || (sig.ok && !sig.ok())) { toast("Les appels ne sont pas disponibles pour l'instant : réessayez dans un instant."); return; }
+    let stream; try { stream = await micStream(); } catch (e) { toast('Autorisez le micro pour appeler.'); return; }
+    callSt = { id: rid(), peer: { uid, name }, role: 'out', state: 'calling', stream, pc: null, t0: 0, muted: false, queue: [], tries: 0 };
+    const c = callSt, again = () => {   // the invitation is repeated every 3 s for about 40 s, so that a member who opens the app after the notification still gets it
+      if (callSt !== c || c.state !== 'calling') return;
+      if (c.tries++ >= 14) { endCall(true, 'missed'); return; }
+      sendSig('invite'); callTimer = setTimeout(again, 3000);
+    };
+    again(); notify({ kind: 'call', tontine_id: S.tid, to: uid }); renderCall();
+  }
+  function makePc(c) {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS }); c.pc = pc;
+    c.stream.getTracks().forEach(t => pc.addTrack(t, c.stream));
+    pc.onicecandidate = e => { if (e.candidate && callSt === c) sendSig('ice', { d: e.candidate.toJSON() }); };
+    pc.ontrack = e => { const au = $('callAudio'); if (au) { au.srcObject = e.streams[0]; au.play().catch(() => {}); } };
+    let lost = 0;
+    pc.onconnectionstatechange = () => {
+      if (callSt !== c) return; const st = pc.connectionState;
+      if (st === 'connected') { clearTimeout(lost); clearTimeout(callTimer); if (c.state !== 'active') { c.state = 'active'; c.t0 = Date.now(); callTick = setInterval(renderCallTime, 1000); renderCall(); buzz(30); } }
+      else if (st === 'failed') endCall(true, 'failed');
+      else if (st === 'disconnected') { clearTimeout(lost); lost = setTimeout(() => { if (callSt === c && pc.connectionState !== 'connected') endCall(true, 'failed'); }, 8000); }
+    };
+    callTimer = setTimeout(() => { if (callSt === c && c.state !== 'active') endCall(true, 'failed'); }, 25000);   // no audio path after 25 s: give up
+    return pc;
+  }
+  const flushIce = async c => { for (const d of c.queue.splice(0)) { try { await c.pc.addIceCandidate(d); } catch (e) { /* stale candidate */ } } };
+  async function onSignal(m) {
+    try {
+      if (!m || !S.user || m.to !== S.user.id) return;
+      const c = callSt;
+      if (m.k === 'invite') {
+        if (callEnded.has(m.id) || (c && c.id === m.id)) return;
+        if (c || !callsSupported()) { sig.send({ k: 'busy', id: m.id, to: m.from, from: S.user.id }); return; }
+        callSt = { id: m.id, peer: { uid: m.from, name: String(m.name || 'Un membre').slice(0, 60) }, role: 'in', state: 'ringing', stream: null, pc: null, t0: 0, muted: false, queue: [] };
+        ringStart(); callTimer = setTimeout(() => { if (callSt && callSt.state === 'ringing') endCall(false, 'missed'); }, 50000); renderCall(); return;
+      }
+      if (!c || c.id !== m.id) return;
+      if (m.k === 'accept' && c.role === 'out' && c.state === 'calling') {
+        clearTimeout(callTimer); c.state = 'connecting'; renderCall();
+        const pc = makePc(c), offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSig('offer', { d: { type: offer.type, sdp: offer.sdp } });
+      } else if (m.k === 'offer' && c.role === 'in' && c.pc) {
+        await c.pc.setRemoteDescription(m.d); await flushIce(c);
+        const ans = await c.pc.createAnswer(); await c.pc.setLocalDescription(ans); sendSig('answer', { d: { type: ans.type, sdp: ans.sdp } });
+      } else if (m.k === 'answer' && c.role === 'out' && c.pc) { await c.pc.setRemoteDescription(m.d); await flushIce(c); }
+      else if (m.k === 'ice') { if (c.pc && c.pc.remoteDescription) { try { await c.pc.addIceCandidate(m.d); } catch (e) { /* stale candidate */ } } else c.queue.push(m.d); }
+      else if (m.k === 'decline') endCall(false, 'declined');
+      else if (m.k === 'busy') endCall(false, 'busy');
+      else if (m.k === 'end') endCall(false, m.why === 'missed' ? 'missed' : 'ended');
+    } catch (e) { endCall(true, 'failed'); }
+  }
+  async function acceptCall() {
+    const c = callSt; if (!c || c.role !== 'in' || c.state !== 'ringing') return;
+    ringStop(); clearTimeout(callTimer);
+    try { c.stream = await micStream(); } catch (e) { toast('Autorisez le micro pour répondre.'); sendSig('decline'); endCall(false, ''); return; }
+    if (callSt !== c) { c.stream.getTracks().forEach(t => t.stop()); return; }
+    c.state = 'connecting'; makePc(c); renderCall(); sendSig('accept');
+  }
+  function endCall(send, why) {
+    const c = callSt; if (!c) return;
+    if (send) sendSig('end', { why });
+    callSt = null; callEnded.add(c.id);
+    clearTimeout(callTimer); clearInterval(callTick); ringStop();
+    try { c.pc && c.pc.close(); } catch (e) { /* already closed */ }
+    try { c.stream && c.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* already stopped */ }
+    const au = $('callAudio'); if (au) au.srcObject = null;
+    renderCall();
+    const msg = { missed: c.role === 'in' ? 'Appel manqué de ' + c.peer.name + '.' : 'Pas de réponse de ' + c.peer.name + '.', declined: c.peer.name + ' a refusé l\'appel.', busy: c.peer.name + ' est déjà en ligne.',
+      failed: "Connexion impossible : le réseau empêche l'appel direct. Réessayez, ou passez par un autre réseau (Wi-Fi ou données mobiles).", ended: 'Appel terminé.' }[why];
+    if (msg) toast(msg);
+  }
+  function renderCallTime() { const t = $('callTime'), c = callSt; if (!t || !c || c.state !== 'active') return; const s = Math.floor((Date.now() - c.t0) / 1000); t.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function renderCall() {
+    const b = $('callBox'); if (!b) return; const c = callSt; b.hidden = !c;
+    if (!c) { b.innerHTML = ''; return; }
+    const md = $('modal'); if (md && md.open) md.close();   // an open window would stay above the call screen
+    const label = c.state === 'ringing' ? 'Appel vocal entrant…' : c.state === 'calling' ? 'Appel en cours…' : c.state === 'connecting' ? 'Connexion…' : 'En communication';
+    b.innerHTML = `<div class="callcard"><span class="av big" style="--h:${hueOf(c.peer.name)}" aria-hidden="true">${esc(initials(c.peer.name))}</span><h2>${esc(c.peer.name)}</h2><p class="sub" id="callState">${label}</p><p class="calltime num" id="callTime"></p>
+      <div class="callbtns">${c.state === 'ringing'
+        ? '<button type="button" class="callbtn ok" data-act="callaccept" aria-label="Répondre">📞<span>Répondre</span></button><button type="button" class="callbtn no" data-act="calldecline" aria-label="Refuser">✖<span>Refuser</span></button>'
+        : `<button type="button" class="callbtn${c.muted ? ' on' : ''}" data-act="callmute" aria-pressed="${c.muted}" aria-label="Couper le micro">${c.muted ? '🔇' : '🎙️'}<span>${c.muted ? 'Micro coupé' : 'Micro'}</span></button><button type="button" class="callbtn no" data-act="callend" aria-label="Raccrocher">📵<span>Raccrocher</span></button>`}</div></div>`;
+    renderCallTime();
+    const f = b.querySelector('button'); if (f && c.state === 'ringing') f.focus();
+  }
+  window.addEventListener('pagehide', () => { if (callSt) endCall(true, 'ended'); });
 
   // ---------- Router ----------
   const TABS = ['bord', 'tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
@@ -1063,7 +1174,8 @@
     ui.dlgFn = () => memberDialog(id);
     const me0 = myRow(), canReceipt = isAdmin() || (me0 && me0.id === id), rph = isAdmin() ? waPhone(S.cfg, S.contacts.get(id)) : '';
     const where = idx < 0 ? '' : S.out.has(idx) ? `A reçu la cagnotte (tour ${idx + 1}).` : `Passe au tour ${idx + 1} sur ${D.n}.`;
-    $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>
+    const canCall = m.user_id && S.user && m.user_id !== S.user.id && m.status === 'active' && callsSupported() && sig;
+    $('modalBody').innerHTML = `<h2>${esc(m.name)}</h2><p class="sub">${esc(where)}</p>${canCall ? `<p><button type="button" class="mini primary" data-act="callmember" data-uid="${esc(m.user_id)}" data-name="${esc(m.name)}">📞 Appeler en vocal</button></p>` : ''}
       <div class="statgrid"><div><div class="big num">${n}</div><div class="sub">versement${n > 1 ? 's' : ''}</div></div><div><div class="big num">${money(st.total)}</div><div class="sub">versé en tout</div></div></div>
       <h3>Récompenses</h3>${(() => { const pu = punctuality(m), b = badgesHtml(pu); return b ? `<p class="badges">${b}</p><p class="hint">${pu.streak > 1 ? pu.streak + ' tours payés à temps d\'affilée. Bravo !' : 'Dernier tour payé avant la date de fin. Bravo !'}</p>` : '<p class="hint">Payer sa cotisation avant la fin du tour donne le badge ⭐ Ponctuel.</p>'; })()}
       <h3 style="margin-top:14px">Moyens de paiement</h3>${n ? '<ul class="list">' + [...st.by].map(([k, o]) => `<li class="row"><div class="grow name">${esc(methodName(k))}</div><div class="sub num">${o.n} fois · ${money(o.sum)}</div></li>`).join('') + '</ul>' : '<p class="hint">Aucun versement pour l\'instant.</p>'}
@@ -1111,6 +1223,11 @@
         $('modalBody').innerHTML = `<h2>Photo de ${esc(m.author_name)}</h2><p class="sub">${esc(fmtTime(m.ts))}</p><img class="zoomimg" src="${v.url}" alt="${esc(m.att.name)}"><div class="dlg-actions"><a class="lnk" href="${v.url}" download="${esc(m.att.name)}">Enregistrer la photo</a><button type="button" data-m="close">Fermer</button></div>`;
         $('modal').showModal(); return;
       }
+      if (act === 'callmember') { $('modal').close(); startCall(b.dataset.uid, b.dataset.name); return; }
+      if (act === 'callaccept') { acceptCall(); return; }
+      if (act === 'calldecline') { sendSig('decline'); endCall(false, ''); return; }
+      if (act === 'callend') { endCall(true, 'ended'); return; }
+      if (act === 'callmute') { const c = callSt; if (c && c.stream) { c.muted = !c.muted; c.stream.getAudioTracks().forEach(t => { t.enabled = !c.muted; }); renderCall(); } return; }
       if (act === 'pickphoto') { $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
       if (act === 'pushon') { await enablePush(); return; }

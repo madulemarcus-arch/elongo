@@ -39,6 +39,7 @@ const deps = () => ({
   getMessage: async id => state.messages.find(m => m.id === id) || null,
   getTopic: async id => state.topics.find(t => t.id === id) || null,
   audience: async () => new Set(members.map(m => m.user_id).filter(Boolean)),
+  nameOfUser: async (t, uid) => (members.find(m => m.user_id === uid) || {}).name || '',
   subscriptionsFor: async ids => state.subs.filter(s => ids.includes(s.user_id)),
   deleteSubscription: async (u, e) => { state.subs = state.subs.filter(s => !(s.user_id === u && s.endpoint === e)); },
   listTontines: async () => [T],
@@ -109,6 +110,19 @@ state.sent = [];
 await call({ kind: 'message', message_id: 'g3' }, { token: 'tok-alice' });
 assert.equal(state.sent[0].body, '🎬 Vidéo');
 step('message notifications');
+
+// ---------- voice calls ----------
+reset();
+assert.equal((await j(await call({ kind: 'call', tontine_id: 't1', to: BOB }))).status, 401, 'call: no token');
+assert.equal((await j(await call({ kind: 'call', tontine_id: 't1', to: BOB }, { token: 'tok-alice' }))).sent, 1, 'the callee gets one notification');
+assert.deepEqual(to(), ['e-bob']);
+assert.equal(state.sent[0].title, 'Alice · Tontine des amis');
+assert.match(state.sent[0].body, /Appel vocal/);
+state.sent = [];
+assert.equal((await j(await call({ kind: 'call', tontine_id: 't1', to: OUTSIDER }, { token: 'tok-alice' }))).status, 403, 'the callee must belong to the tontine');
+assert.equal((await j(await call({ kind: 'call', tontine_id: 't1', to: ALICE }, { token: 'tok-alice' }))).status, 403, 'no call to oneself');
+assert.equal((await j(await call({ kind: 'call', tontine_id: 't1' }, { token: 'tok-alice' }))).status, 403, 'a callee is required');
+step('voice call notifications');
 
 // ---------- reminders (tour 1 ends 2026-10-10, 3 days notice) ----------
 reset(); state.today = '2026-10-06';
