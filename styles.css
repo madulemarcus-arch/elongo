@@ -422,6 +422,7 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .callcard { display: grid; justify-items: center; gap: 8px; text-align: center; color: #fff; }
 .callcard h2 { font-size: 1.7rem; overflow-wrap: anywhere; }
 .callcard .sub { color: rgba(255, 255, 255, .8); }
+.callhint { margin: 6px 0 0; padding: 0 16px; font-size: .88rem; text-align: center; color: rgba(255, 255, 255, .85); }
 .calltime { min-height: 1.4em; font-size: 1.3rem; font-weight: 700; margin: 0; }
 .av.big { width: 104px; height: 104px; font-size: 2.4rem; background: hsl(var(--h, 220) 55% 42%); color: #fff; }
 button.callico { width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; border-radius: 50%; background: #1f9d5c; color: #fff; font-size: 1.1rem; display: inline-grid; place-items: center; flex: none; box-shadow: 0 2px 8px rgba(31, 157, 92, .35); }

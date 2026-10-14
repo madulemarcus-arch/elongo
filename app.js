@@ -376,6 +376,17 @@
     const beep = () => { try { unlockAudio(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = .3; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
     beep(); ringTimer = setInterval(beep, 3000);
   }
+  function setLoud(c, on) {   // loudspeaker mode: the page cannot pick the phone's output, so the remote voice is amplified (with a limiter) instead
+    const au = $('callAudio'); unlockAudio(); if (!au || !au.srcObject || !ringCtx) return false;
+    try {
+      if (on) {
+        if (!c.loudNodes) { const src = ringCtx.createMediaStreamSource(au.srcObject), gain = ringCtx.createGain(), lim = ringCtx.createDynamicsCompressor(); gain.gain.value = 3; src.connect(gain); gain.connect(lim); lim.connect(ringCtx.destination); c.loudNodes = [src, gain, lim]; }
+        au.muted = true;   // the element stays attached (some browsers need it) but the amplified copy is the one we hear
+      } else { stopLoud(c); au.muted = false; au.play().catch(() => {}); }
+      return true;
+    } catch (e) { stopLoud(c); au.muted = false; return false; }
+  }
+  const stopLoud = c => { (c.loudNodes || []).forEach(n => { try { n.disconnect(); } catch (e) { /* already detached */ } }); c.loudNodes = null; };
   async function setSpeaker(on) {   // browsers cannot force the loudspeaker: use the output device list where it exists
     const au = $('callAudio'); if (!au || !au.setSinkId || !navigator.mediaDevices.enumerateDevices) return false;
     try {
@@ -456,7 +467,7 @@
     clearTimeout(callTimer); clearInterval(callTick); ringStop();
     try { c.pc && c.pc.close(); } catch (e) { /* already closed */ }
     try { c.stream && c.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* already stopped */ }
-    const au = $('callAudio'); if (au) au.srcObject = null;
+    stopLoud(c); const au = $('callAudio'); if (au) { au.srcObject = null; au.muted = false; }
     renderCall();
     const msg = { missed: c.role === 'in' ? 'Appel manqué de ' + c.peer.name + '.' : 'Pas de réponse de ' + c.peer.name + '.', declined: c.peer.name + ' a refusé l\'appel.', busy: c.peer.name + ' est déjà en ligne.',
       failed: "Connexion impossible : le réseau empêche l'appel direct. Réessayez, ou passez par un autre réseau (Wi-Fi ou données mobiles).", ended: 'Appel terminé.' }[why];
@@ -468,10 +479,10 @@
     if (!c) { b.innerHTML = ''; return; }
     const md = $('modal'); if (md && md.open) md.close();   // an open window would stay above the call screen
     const label = c.state === 'ringing' ? 'Appel vocal entrant…' : c.state === 'calling' ? (c.remoteRings ? 'Appel en cours… ça sonne chez ' + c.peer.name : 'Appel en cours… en attente de ' + c.peer.name) : c.state === 'connecting' ? 'Connexion…' : 'En communication';
-    b.innerHTML = `<div class="callcard"><span class="av big" style="--h:${hueOf(c.peer.name)}" aria-hidden="true">${esc(initials(c.peer.name))}</span><h2>${esc(c.peer.name)}</h2><p class="sub" id="callState">${label}</p><p class="calltime num" id="callTime"></p>
+    b.innerHTML = `<div class="callcard"><span class="av big" style="--h:${hueOf(c.peer.name)}" aria-hidden="true">${esc(initials(c.peer.name))}</span><h2>${esc(c.peer.name)}</h2><p class="sub" id="callState">${label}</p><p class="calltime num" id="callTime"></p>${c.hint ? `<p class="callhint">${esc(c.hint)}</p>` : ''}
       <div class="callbtns">${c.state === 'ringing'
         ? '<button type="button" class="callbtn ok" data-act="callaccept" aria-label="Répondre">📞<span>Répondre</span></button><button type="button" class="callbtn no" data-act="calldecline" aria-label="Refuser">✖<span>Refuser</span></button>'
-        : `<button type="button" class="callbtn${c.muted ? ' on' : ''}" data-act="callmute" aria-pressed="${c.muted}" aria-label="Couper le micro">${c.muted ? '🔇' : '🎙️'}<span>${c.muted ? 'Micro coupé' : 'Micro'}</span></button><button type="button" class="callbtn${c.loud ? ' on' : ''}" data-act="callspeaker" aria-pressed="${!!c.loud}" aria-label="Haut-parleur">🔊<span>Haut-parleur</span></button><button type="button" class="callbtn no" data-act="callend" aria-label="Raccrocher">📵<span>Raccrocher</span></button>`}</div></div>`;
+        : `<button type="button" class="callbtn${c.muted ? ' on' : ''}" data-act="callmute" aria-pressed="${c.muted}" aria-label="Couper le micro">${c.muted ? '🔇' : '🎙️'}<span>${c.muted ? 'Micro coupé' : 'Micro'}</span></button><button type="button" class="callbtn${c.loud ? ' on' : ''}" data-act="callspeaker" aria-pressed="${!!c.loud}" aria-label="Haut-parleur">🔊<span>${c.loud ? 'Son fort' : 'Haut-parleur'}</span></button><button type="button" class="callbtn no" data-act="callend" aria-label="Raccrocher">📵<span>Raccrocher</span></button>`}</div></div>`;
     renderCallTime();
     const f = b.querySelector('button'); if (f && c.state === 'ringing') f.focus();
   }
@@ -1249,7 +1260,7 @@
       if (act === 'callaccept') { acceptCall(); return; }
       if (act === 'calldecline') { sendSig('decline'); endCall(false, ''); return; }
       if (act === 'callend') { endCall(true, 'ended'); return; }
-      if (act === 'callspeaker') { const c = callSt; if (c) { setSpeaker(!c.loud).then(ok => { if (!callSt) return; if (ok) c.loud = !c.loud; else toast("Votre navigateur ne permet pas de changer la sortie son : utilisez les touches de volume du téléphone."); renderCall(); }); } return; }
+      if (act === 'callspeaker') { const c = callSt; if (c) { const on = !c.loud; setSpeaker(on); if (setLoud(c, on)) { c.loud = on; c.hint = on ? "Son amplifié. Si ce n'est pas assez, montez le volume du téléphone." : ''; } else c.hint = 'Pas encore de son à amplifier : attendez la connexion.'; renderCall(); } return; }
       if (act === 'callmute') { const c = callSt; if (c && c.stream) { c.muted = !c.muted; c.stream.getAudioTracks().forEach(t => { t.enabled = !c.muted; }); renderCall(); } return; }
       if (act === 'pickphoto') { $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }

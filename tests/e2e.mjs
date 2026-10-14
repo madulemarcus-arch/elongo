@@ -825,6 +825,9 @@ await Bp.waitForSelector('#callBox:has-text("En communication")', { timeout: 200
 await shot(A, '13-appel');
 await A.click('[data-act=callmute]');
 await A.waitForSelector('[data-act=callmute][aria-pressed=true]');
+await A.click('[data-act=callspeaker]');
+await A.waitForSelector('[data-act=callspeaker][aria-pressed=true]');   // loud mode switched on
+assert.ok((await A.textContent('#callBox')).includes('Son amplifié'), 'the call screen explains loud mode');
 await A.click('[data-act=callend]');
 await A.waitForSelector('#callBox', { state: 'hidden' });
 await Bp.waitForSelector('#callBox', { state: 'hidden' });
