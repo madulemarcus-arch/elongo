@@ -858,7 +858,7 @@ await Bp.waitForSelector('#toast.show:has-text("nom exact")');
 assert.ok(await Bp.locator(d$('del.name')).count(), 'wrong name: nothing is deleted');
 await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]');
 await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]:has-text("Confirmer")');
-await Bp.waitForSelector('li:has-text("Marcus")', { state: 'detached' });
+await Bp.waitForSelector('#view li:has-text("Marcus")', { state: 'detached' });   // the closed member window still holds a hidden "Marcus" line
 await A.waitForFunction(() => location.hash === '#/accueil');   // the old principal has lost access
 assert.equal(await A.locator('.tabbar a[data-tab=organisateur]').isVisible(), false, 'the removed principal has no organizer space any more');
 step('administrator removes the principal administrator and takes his place');
