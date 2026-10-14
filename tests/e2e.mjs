@@ -560,6 +560,17 @@ await A.waitForSelector('.msg:has-text(".webm") audio');
 await shot(A, '08-discussion');
 step('photo, PDF and voice attachments');
 
+// Dashboard next to the chat: only on wide screens.
+assert.equal(await A.isVisible('#chatDash'), false, 'dashboard hidden on a phone');
+await A.setViewportSize({ width: 1280, height: 800 });
+await A.waitForSelector('#chatDash', { state: 'visible' });
+const dash = await A.textContent('#chatDash');
+assert.ok(/Tableau de bord/.test(dash) && /bénéficiaire/.test(dash) && /Reste à verser|Tout est versé/.test(dash), 'dashboard content: ' + dash);
+assert.ok(await A.evaluate(() => { const c = document.querySelector('.chat-panel').getBoundingClientRect(), d = document.getElementById('chatDash').getBoundingClientRect(); return d.left >= c.right - 1; }), 'dashboard sits beside the chat');
+await shot(A, '08b-discussion-tableau');
+await A.setViewportSize({ width: 390, height: 844 });
+step('dashboard beside the chat on wide screens');
+
 // Closing a topic blocks writing; the organizer can delete messages
 await Bp.click('[data-act=closetopic]');
 await Bp.waitForSelector('#chatForm[hidden]', { state: 'attached' });

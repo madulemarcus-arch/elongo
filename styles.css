@@ -437,3 +437,15 @@ button.callme:active { transform: scale(.98); }
 @keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 157, 92, .55); } 50% { box-shadow: 0 0 0 16px rgba(31, 157, 92, 0); } }
 .callbtn.ok { animation: ringpulse 1.6s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .callbtn.ok { animation: none; } }
+
+/* Chat + dashboard side by side on wide screens */
+.chatdash { display: none; }
+@media (min-width: 1000px) {
+  main.split { max-width: 1160px; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+  main.split .chatdash { display: block; position: sticky; top: 76px; max-height: calc(100vh - 100px); overflow-y: auto; }
+  .chatdash .dashname { font-size: 1.35rem; margin: 2px 0 4px; }
+  .chatdash .dashpot { font-size: 1.2rem; font-weight: 700; margin-top: 10px; }
+  .chatdash .dashh { margin: 16px 0 6px; font-size: .95rem; }
+  .chatdash .bar { margin: 6px 0; background: var(--line); }
+  .chatdash .mine { margin-top: 10px; }
+}
