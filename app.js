@@ -373,7 +373,7 @@
   const ringStop = () => { clearInterval(ringTimer); ringTimer = 0; };
   function ringbackStart() {   // the caller's own tone: a softer, longer beep than the incoming ring
     ringStop();
-    const beep = () => { try { unlockAudio(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = .3; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
+    const beep = () => { try { unlockAudio(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = callSt && callSt.loud ? 1 : .3; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
     beep(); ringTimer = setInterval(beep, 3000);
   }
   function setLoud(c, on) {   // loudspeaker mode: the page cannot pick the phone's output, so the remote voice is amplified (with a limiter) instead
@@ -414,7 +414,7 @@
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS }); c.pc = pc;
     c.stream.getTracks().forEach(t => pc.addTrack(t, c.stream));
     pc.onicecandidate = e => { if (e.candidate && callSt === c) sendSig('ice', { d: e.candidate.toJSON() }); };
-    pc.ontrack = e => { const au = $('callAudio'); if (au) { au.srcObject = e.streams[0]; au.play().catch(() => {}); } };
+    pc.ontrack = e => { const au = $('callAudio'); if (au) { au.srcObject = e.streams[0]; au.play().catch(() => {}); if (c.loud) setLoud(c, true); } };
     let lost = 0;
     pc.onconnectionstatechange = () => {
       if (callSt !== c) return; const st = pc.connectionState;
@@ -1260,7 +1260,15 @@
       if (act === 'callaccept') { acceptCall(); return; }
       if (act === 'calldecline') { sendSig('decline'); endCall(false, ''); return; }
       if (act === 'callend') { endCall(true, 'ended'); return; }
-      if (act === 'callspeaker') { const c = callSt; if (c) { const on = !c.loud; setSpeaker(on); if (setLoud(c, on)) { c.loud = on; c.hint = on ? "Son amplifié. Si ce n'est pas assez, montez le volume du téléphone." : ''; } else c.hint = 'Pas encore de son à amplifier : attendez la connexion.'; renderCall(); } return; }
+      if (act === 'callspeaker') {
+        const c = callSt; if (!c) return; c.loud = !c.loud; setSpeaker(c.loud);
+        if (c.state === 'calling') {   // waiting tone: louder at once
+          if (c.remoteRings) ringbackStart();
+          c.hint = c.loud ? 'Haut-parleur activé : la sonnerie d\'attente est plus forte. La voix de l\'autre sera amplifiée dès qu\'il répond.' : '';
+        } else if (setLoud(c, c.loud)) c.hint = c.loud ? "Son amplifié. Si ce n'est pas assez, montez le volume du téléphone." : '';
+        else c.hint = '';
+        renderCall(); return;
+      }
       if (act === 'callmute') { const c = callSt; if (c && c.stream) { c.muted = !c.muted; c.stream.getAudioTracks().forEach(t => { t.enabled = !c.muted; }); renderCall(); } return; }
       if (act === 'pickphoto') { $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
