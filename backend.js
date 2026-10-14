@@ -5,7 +5,7 @@
 // Rows keep the snake_case column names of supabase/schema.sql.
 (function () {
   const cfg = window.LISANGA_CONFIG || {};
-  const TABLES = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal'];
+  const TABLES = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal', 'reactions'];
 
   // ---------- Supabase ----------
   function supabaseBackend() {
@@ -95,7 +95,7 @@
       if (t === 'members') return own || (mem && mem.status === 'active') || r.user_id === B.user.id;
       return own || (mem && mem.status === 'active');
     };
-    const pk = { payments: ['tontine_id', 'round', 'member_id'], payouts: ['tontine_id', 'round'], contacts: ['member_id'], push_subscriptions: ['user_id', 'endpoint'] };
+    const pk = { payments: ['tontine_id', 'round', 'member_id'], payouts: ['tontine_id', 'round'], contacts: ['member_id'], reactions: ['message_id', 'user_id'], push_subscriptions: ['user_id', 'endpoint'] };
     const sameKey = (t, a, b) => (pk[t] || ['id']).every(k => a[k] === b[k]);
     const now = () => new Date().toISOString();
     // New row = column defaults of schema.sql, overridden by the given values.
@@ -107,6 +107,7 @@
         : t === 'payments' ? { penalty_paid: false, done_on: null, log: [], updated_at: now() }
         : t === 'payouts' ? { created_at: now() }
         : t === 'journal' ? { id: uuid(), by_id: must(), created_at: now() }
+        : t === 'reactions' ? { user_id: must(), created_at: now() }
         : t === 'push_subscriptions' ? { user_id: must(), created_at: now() } : {};
       return Object.assign(base, row);
     };
@@ -115,6 +116,11 @@
       if (t === 'tontines') { if (row.owner_id !== B.user.id) throw denied(); if (!(row.amount > 0)) throw err('amount check', '23514'); }
       else if (['members', 'contacts', 'payments', 'payouts'].includes(t)) { if (!isOwner(d, row.tontine_id)) throw denied(); }
       else if (t === 'journal') { if (!isOwner(d, row.tontine_id) || row.by_id !== B.user.id) throw denied(); }
+      else if (t === 'reactions') {
+        if (!isActive(d, row.tontine_id) || row.user_id !== B.user.id || !T(d, 'messages').some(m => m.id === row.message_id && m.tontine_id === row.tontine_id)) throw denied();
+        if (!row.emoji || row.emoji.length > 8) throw err('check', '23514');
+        if (T(d, t).some(x => sameKey(t, x, row))) throw err('duplicate key', '23505');
+      }
       else if (t === 'topics') {
         if (!isActive(d, row.tontine_id) || row.author_id !== B.user.id) throw denied();
         if (T(d, t).some(x => x.tontine_id === row.tontine_id && x.title.toLowerCase() === row.title.toLowerCase())) throw err('duplicate key', '23505');
@@ -161,7 +167,7 @@
       if (t === 'tontines' && patch.owner_id !== undefined && (patch.owner_id !== B.user.id || !T(d, t).some(r => match(r, eq) && isOwner(d, r.id)))) throw err('owner_locked');   // an organizer may take the ownership, nobody else
       T(d, t).forEach(r => {
         if (!match(r, eq) || !visible(d, t, r)) return;
-        const allowed = t === 'topics' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : t === 'messages' || t === 'journal' ? false : isOwner(d, tid(t, r));
+        const allowed = t === 'topics' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : t === 'messages' || t === 'journal' ? false : t === 'reactions' ? r.user_id === B.user.id : isOwner(d, tid(t, r));
         if (allowed && t === 'members' && patch.is_organizer !== undefined && patch.is_organizer !== !!r.is_organizer) {
           if (patch.is_organizer && (!r.user_id || (patch.status || r.status) !== 'active')) throw err('organizer_needs_account');
         }
@@ -180,13 +186,14 @@
       d[t] = T(d, t).filter(r => {
         if (!match(r, eq) || !visible(d, t, r)) return true;
         const ok = t === 'push_subscriptions' ? r.user_id === B.user.id : t === 'tontines' ? isOwner(d, r.id) : t === 'members' ? isOwner(d, r.tontine_id) || (r.user_id === B.user.id && r.status === 'pending')
-          : t === 'journal' ? false : t === 'topics' || t === 'messages' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : isOwner(d, tid(t, r));
+          : t === 'journal' ? false : t === 'reactions' ? r.user_id === B.user.id : t === 'topics' || t === 'messages' ? r.author_id === B.user.id || isOwner(d, r.tontine_id) : isOwner(d, tid(t, r));
         if (ok) gone.push(r); return !ok;
       });
       gone.forEach(g => {   // cascades of schema.sql
         if (t === 'members') ['contacts', 'payments', 'payouts'].forEach(x => { d[x] = T(d, x).filter(r => r.member_id !== g.id); });
-        if (t === 'topics') d.messages = T(d, 'messages').filter(r => r.topic_id !== g.id);
-        if (t === 'tontines') ['members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal'].forEach(x => { d[x] = T(d, x).filter(r => r.tontine_id !== g.id); });
+        if (t === 'messages') d.reactions = T(d, 'reactions').filter(r => r.message_id !== g.id);
+        if (t === 'topics') { const ids = new Set(T(d, 'messages').filter(r => r.topic_id === g.id).map(r => r.id)); d.messages = T(d, 'messages').filter(r => r.topic_id !== g.id); d.reactions = T(d, 'reactions').filter(r => !ids.has(r.message_id)); }
+        if (t === 'tontines') ['members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal', 'reactions'].forEach(x => { d[x] = T(d, x).filter(r => r.tontine_id !== g.id); });
       });
       save(d); gone.forEach(r => notify(t, tid(t, r))); return copy(gone);
     };

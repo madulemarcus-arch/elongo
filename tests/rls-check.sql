@@ -124,6 +124,27 @@ select pg_temp.zero('intrus ne lit pas les fichiers', $$select count(*)::int fro
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select pg_temp.check('organisateur lit les fichiers', (select count(*) from storage.objects) = 1);
 
+-- reactions: one per person and message, only for active members of that tontine, each one manages its own
+reset role;
+select set_config('app.m', (select id::text from messages limit 1), false) as m \gset
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+insert into reactions (tontine_id, message_id, user_name, emoji) values (current_setting('app.t')::uuid, current_setting('app.m')::uuid, 'Bob', '👍');
+select pg_temp.fails('une seule réaction par personne et par message', format('insert into reactions (tontine_id, message_id, user_name, emoji) values (%L, %L, ''Bob'', ''❤️'')', current_setting('app.t'), current_setting('app.m')));
+update reactions set emoji = '❤️' where message_id = current_setting('app.m')::uuid;
+select pg_temp.check('on change sa réaction', (select emoji from reactions where user_id = '00000000-0000-0000-0000-00000000000b') = '❤️');
+select pg_temp.fails('réaction signée d''un autre', format('insert into reactions (tontine_id, message_id, user_id, user_name, emoji) values (%L, %L, %L, ''Alice'', ''😂'')', current_setting('app.t'), current_setting('app.m'), '00000000-0000-0000-0000-00000000000a'));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+insert into reactions (tontine_id, message_id, user_name, emoji) values (current_setting('app.t')::uuid, current_setting('app.m')::uuid, 'Orga', '😂');
+select pg_temp.check('les membres voient toutes les réactions', (select count(*) from reactions) = 2);
+select pg_temp.zero('on ne supprime pas la réaction d''un autre', $$with d as (delete from reactions where user_id = '00000000-0000-0000-0000-00000000000b' returning 1) select count(*)::int from d$$);
+select pg_temp.zero('on ne modifie pas la réaction d''un autre', $$with u as (update reactions set emoji = '😮' where user_id = '00000000-0000-0000-0000-00000000000b' returning 1) select count(*)::int from u$$);
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+select pg_temp.zero('un intrus ne voit pas les réactions', $$select count(*)::int from reactions$$);
+select pg_temp.fails('un intrus ne réagit pas', format('insert into reactions (tontine_id, message_id, user_name, emoji) values (%L, %L, ''X'', ''👍'')', current_setting('app.t'), current_setting('app.m')));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+delete from reactions where message_id = current_setting('app.m')::uuid;
+select pg_temp.check('on retire sa propre réaction', (select count(*) from reactions where user_id = '00000000-0000-0000-0000-00000000000b') = 0);
+
 -- co-organizer: named by an organizer, then has every right of the principal administrator
 reset role;
 create function pg_temp.dry(stmt text) returns int language plpgsql as $$

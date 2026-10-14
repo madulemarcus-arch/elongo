@@ -113,7 +113,7 @@
   // ---------- State ----------
   const S = {
     user: null, tontines: [], tid: null, cfg: null, view: '', arg: '',
-    allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [],
+    allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [], reactions: [],
     loaded: false, members: [], pending: [], preview: null,
   };
   const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
@@ -240,6 +240,7 @@
     const eq = { tontine_id: tid };
     if (name === 'tontines') { await loadTontines(); if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast("Vous n'avez plus accès à cette tontine (supprimée, ou vous en avez été retiré)."); await afterTontineGone(); } } return; }
     if (name === 'contacts' && !isAdmin()) return;
+    if (name === 'reactions') { try { const rr = await selectCached('reactions', tid, { eq }); if (rr && tid === S.tid) S.reactions = rr; } catch (e) { S.reactions = []; } return; }   // silent when the table does not exist yet
     if (name === 'journal') { try { const jr = await selectCached('journal', tid, { eq, order: [['created_at', false]], limit: 100 }); if (jr) S.journal = jr.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
     const rows = await selectCached(name, tid, name === 'messages' ? { eq, order: [['created_at', false]], limit: 300 } : name === 'journal' ? { eq, order: [['created_at', false]], limit: 100 } : name === 'topics' ? { eq, order: [['created_at', true]] } : name === 'members' ? { eq, order: [['position', true], ['created_at', true]] } : { eq });
     if (tid !== S.tid || !rows) return;   // no network and nothing kept on this phone: leave what is shown
@@ -263,7 +264,7 @@
     }
   }
   const nameOf = id => (S.allMembers.find(m => m.id === id) || {}).name;
-  const ALL = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal'];
+  const ALL = ['tontines', 'members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal', 'reactions'];
   let unsub = null, queued = new Set(), timer = 0;
   function queue(table) {
     if (table === '*') ALL.forEach(t => queued.add(t)); else queued.add(table);
@@ -278,7 +279,7 @@
   async function openTontine() {
     if (unsub) { unsub(); unsub = null; }
     S.loaded = false; ui.known = null; ui.seen = null;
-    Object.assign(S, { allMembers: [], members: [], pending: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [] });
+    Object.assign(S, { allMembers: [], members: [], pending: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [], reactions: [] });
     if (!S.tid) return;
     store.set('lisanga.tid:' + S.user.id, S.tid);
     await Promise.all(ALL.map(loadTable));
@@ -860,6 +861,15 @@
     ui.replyTo = { id: m.id, name: m.author_name, text: snippet(m) }; renderReply();
     const i = $('chatIn'); if (i) i.focus();
   }
+  // Emoji reactions: one per person and message; tapping your own emoji again removes it, tapping another replaces it.
+  const REACTS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  function reactionsHtml(m) {
+    const groups = new Map(); S.reactions.filter(r => r.message_id === m.id).forEach(r => { const g = groups.get(r.emoji) || { n: 0, mine: false, names: [] }; g.n++; g.names.push(r.user_name); if (r.user_id === S.user.id) g.mine = true; groups.set(r.emoji, g); });
+    const can = canChat();
+    const chips = [...groups].map(([e, g]) => `<button type="button" class="rchip${g.mine ? ' mine' : ''}" data-act="react" data-mid="${esc(m.id)}" data-e="${esc(e)}" title="${esc(g.names.join(', '))}" aria-pressed="${g.mine}"${can ? '' : ' disabled'}>${esc(e)} <span>${g.n}</span></button>`).join('');
+    const pick = can && ui.reactFor === m.id ? `<div class="rpick" role="group" aria-label="Choisir une réaction">${REACTS.map(e => `<button type="button" data-act="react" data-mid="${esc(m.id)}" data-e="${esc(e)}" aria-label="Réagir avec ${esc(e)}">${esc(e)}</button>`).join('')}</div>` : '';
+    return (chips ? `<div class="rx">${chips}</div>` : '') + pick;
+  }
   function msgHtml(m, prev) {
     const mine = m.author_id === S.user.id, a = m.att, newDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
     const grouped = !newDay && prev.author_id === m.author_id && m.ts - prev.ts < 5 * 60000;   // same author within 5 minutes: no repeated name or avatar
@@ -871,7 +881,7 @@
       att = `<div class="att"><span class="sub">${esc(a.name)}</span><br>${body}</div>`;
     }
     const rp = m.reply && m.reply.name ? `<button type="button" class="quote" data-act="gotomsg" data-mid="${esc(m.reply.id || '')}" aria-label="Voir le message cité"><b>${esc(m.reply.name)}</b><span>${esc(m.reply.text || '')}</span></button>` : '';
-    return (newDay ? `<div class="dsep"><span>${esc(dayLabel(m.ts))}</span></div>` : '') + `<div class="mrow${mine ? ' me' : ''}${grouped ? ' grouped' : ''}" id="m-${esc(m.id)}" data-mid="${esc(m.id)}">${mine ? '' : grouped ? '<span class="av sm ghost" aria-hidden="true"></span>' : `<span class="av sm" aria-hidden="true" style="--h:${hueOf(m.author_name)}">${esc(initials(m.author_name))}</span>`}<div class="msg${mine ? ' me' : ''}" title="${esc(fmtTime(m.ts))}">${mine || grouped ? '' : `<b>${esc(m.author_name)}</b>`}${rp}${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}<div class="meta"><span class="ts">${esc(clock(m.ts))}</span>${canChat() ? `<button class="link" data-act="reply" data-mid="${esc(m.id)}" aria-label="Répondre à ce message" title="Répondre">↩ Répondre</button>` : ''}${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}" aria-label="Supprimer ce message" title="Supprimer">🗑</button>` : ''}</div></div></div>`;
+    return (newDay ? `<div class="dsep"><span>${esc(dayLabel(m.ts))}</span></div>` : '') + `<div class="mrow${mine ? ' me' : ''}${grouped ? ' grouped' : ''}" id="m-${esc(m.id)}" data-mid="${esc(m.id)}">${mine ? '' : grouped ? '<span class="av sm ghost" aria-hidden="true"></span>' : `<span class="av sm" aria-hidden="true" style="--h:${hueOf(m.author_name)}">${esc(initials(m.author_name))}</span>`}<div class="msg${mine ? ' me' : ''}" title="${esc(fmtTime(m.ts))}">${mine || grouped ? '' : `<b>${esc(m.author_name)}</b>`}${rp}${m.body ? `<div class="t">${esc(m.body)}</div>` : ''}${att}${reactionsHtml(m)}<div class="meta"><span class="ts">${esc(clock(m.ts))}</span>${canChat() ? `<button class="link" data-act="reactpick" data-mid="${esc(m.id)}" aria-label="Réagir à ce message" title="Réagir" aria-expanded="${ui.reactFor === m.id}">☺ Réagir</button><button class="link" data-act="reply" data-mid="${esc(m.id)}" aria-label="Répondre à ce message" title="Répondre">↩ Répondre</button>` : ''}${mine || isAdmin() ? `<button class="link" data-act="delmsg" data-mid="${esc(m.id)}" aria-label="Supprimer ce message" title="Supprimer">🗑</button>` : ''}</div></div></div>`;
   }
   function renderPending() {
     const b = $('pendingBox'); if (!b) return; const p = ui.pending; b.hidden = !p;
@@ -1065,7 +1075,16 @@
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
       if (act === 'calday') { dayDialog(b.dataset.date); return; }
-      if (act === 'topic') { ui.topic = id; ui.replyTo = null; renderChatParts(); return; }
+      if (act === 'topic') { ui.topic = id; ui.replyTo = null; ui.reactFor = null; renderChatParts(); return; }
+      if (act === 'reactpick') { ui.reactFor = ui.reactFor === b.dataset.mid ? null : b.dataset.mid; renderChatParts(); return; }
+      if (act === 'react') {
+        const mid = b.dataset.mid, e = b.dataset.e, n = chatName(); ui.reactFor = null; if (!n || !mid || !e) return;
+        const mine = S.reactions.find(r => r.message_id === mid && r.user_id === S.user.id), key = { message_id: mid, user_id: S.user.id };
+        if (mine && mine.emoji === e) await B.remove('reactions', key);
+        else if (mine) await B.update('reactions', { emoji: e }, key);
+        else await B.insert('reactions', { tontine_id: S.tid, message_id: mid, user_name: n.slice(0, 60), emoji: e });
+        buzz(10); await loadTable('reactions'); renderChatParts(); return;
+      }
       if (act === 'reply') { startReply(b.dataset.mid); return; }
       if (act === 'cancelreply') { ui.replyTo = null; renderReply(); return; }
       if (act === 'gotomsg') {
