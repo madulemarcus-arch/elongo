@@ -415,3 +415,21 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .zoomimg { display: block; max-width: 100%; max-height: 70vh; margin: 10px auto; border-radius: 12px; }
 
 .msg video { display: block; max-width: 100%; max-height: 360px; margin-top: 4px; border-radius: 12px; background: #000; }
+
+/* ----- voice calls ----- */
+.callbox { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; background: rgba(5, 10, 30, .94); }
+.callbox[hidden] { display: none; }
+.callcard { display: grid; justify-items: center; gap: 8px; text-align: center; color: #fff; }
+.callcard h2 { font-size: 1.7rem; overflow-wrap: anywhere; }
+.callcard .sub { color: rgba(255, 255, 255, .8); }
+.calltime { min-height: 1.4em; font-size: 1.3rem; font-weight: 700; margin: 0; }
+.av.big { width: 104px; height: 104px; font-size: 2.4rem; background: hsl(var(--h, 220) 55% 42%); color: #fff; }
+.callbtns { display: flex; gap: 32px; margin-top: 22px; padding-bottom: 28px; }
+.callbtn { position: relative; width: 78px; height: 78px; border: 0; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; background: rgba(255, 255, 255, .16); color: #fff; box-shadow: none; }
+.callbtn span { position: absolute; bottom: -26px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+.callbtn.ok { background: #1f9d5c; }
+.callbtn.no { background: #d6453a; }
+.callbtn.on { background: #fff; color: #111; }
+@keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 157, 92, .55); } 50% { box-shadow: 0 0 0 16px rgba(31, 157, 92, 0); } }
+.callbtn.ok { animation: ringpulse 1.6s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .callbtn.ok { animation: none; } }

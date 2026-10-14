@@ -810,6 +810,33 @@ await A.waitForSelector('.hero h2:has-text("Chantal")');
 assert.equal(await Bp.locator('[data-act=swap]').count(), 0, 'members cannot change the order');
 step('change the beneficiary: swap, pass the turn, message for the group, journal');
 
+// ---------- Voice call between two members (fake microphone, audio goes through a real WebRTC connection between the two tabs) ----------
+await tab(A, 'tour'); await tab(Bp, 'tour');
+await A.locator('button[data-act=member]', { hasText: 'Chantal' }).first().click();
+await A.waitForSelector('#modalBody [data-act=callmember]');
+await A.click('#modalBody [data-act=callmember]');
+await Bp.waitForSelector('#callBox:not([hidden]) [data-act=callaccept]');
+assert.ok((await Bp.textContent('#callBox')).includes('Marcus'), 'the callee sees who is calling');
+assert.ok((await A.textContent('#callBox')).includes('Appel en cours'), 'the caller sees the call going out');
+await Bp.click('[data-act=callaccept]');
+await A.waitForSelector('#callBox:has-text("En communication")', { timeout: 20000 });
+await Bp.waitForSelector('#callBox:has-text("En communication")', { timeout: 20000 });
+await shot(A, '13-appel');
+await A.click('[data-act=callmute]');
+await A.waitForSelector('[data-act=callmute][aria-pressed=true]');
+await A.click('[data-act=callend]');
+await A.waitForSelector('#callBox', { state: 'hidden' });
+await Bp.waitForSelector('#callBox', { state: 'hidden' });
+// a refused call: the caller is told
+await Bp.locator('button[data-act=member]', { hasText: 'Marcus' }).first().click();
+await Bp.waitForSelector('#modalBody [data-act=callmember]');
+await Bp.click('#modalBody [data-act=callmember]');
+await A.waitForSelector('#callBox [data-act=calldecline]');
+await A.click('[data-act=calldecline]');
+await Bp.waitForSelector('#toast.show:has-text("refusé")');
+await Bp.waitForSelector('#callBox', { state: 'hidden' });
+step('voice call: ring, answer, talk, mute, hang up, refuse');
+
 // ---------- Administrators: every organizer has the principal's rights, including removing the principal ----------
 await A.goto(url + '#/organisateur');
 await A.waitForSelector('li:has-text("Chantal") [data-act=orga]');
@@ -831,7 +858,7 @@ await Bp.waitForSelector('#toast.show:has-text("nom exact")');
 assert.ok(await Bp.locator(d$('del.name')).count(), 'wrong name: nothing is deleted');
 await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]');
 await Bp.click('li:has-text("Marcus") [data-act=rmprincipal]:has-text("Confirmer")');
-await Bp.waitForSelector('li:has-text("Marcus")', { state: 'detached' });
+await Bp.waitForSelector('#view li:has-text("Marcus")', { state: 'detached' });   // the closed member window still holds a hidden "Marcus" line
 await A.waitForFunction(() => location.hash === '#/accueil');   // the old principal has lost access
 assert.equal(await A.locator('.tabbar a[data-tab=organisateur]').isVisible(), false, 'the removed principal has no organizer space any more');
 step('administrator removes the principal administrator and takes his place');

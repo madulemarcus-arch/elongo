@@ -49,6 +49,14 @@
     B.rpc = async (name, args) => unwrap(await sb.rpc(name, args));
     // Edge Function call (push notifications). Failures never block the app.
     B.invoke = async (name, body) => { try { const r = await sb.functions.invoke(name, { body }); return r.data || null; } catch (e) { return null; } };
+    // Signalling of voice calls: a private broadcast channel per tontine (only active members may join: supabase/calls.sql).
+    B.signal = (tid, handler) => {
+      const ch = sb.channel('call:' + tid, { config: { private: true, broadcast: { self: false } } });
+      let up = false;
+      ch.on('broadcast', { event: 'sig' }, m => handler(m.payload));
+      ch.subscribe(st => { up = st === 'SUBSCRIBED'; });
+      return { ok: () => up, send: p => ch.send({ type: 'broadcast', event: 'sig', payload: p }), leave: () => { sb.removeChannel(ch); } };
+    };
     // cb(table) fires on any change of that table for this tontine, and cb('*') after a reconnection.
     B.subscribe = (tid, cb) => {
       const ch = sb.channel('lisanga-' + tid + '-' + Math.random().toString(36).slice(2, 6));
@@ -196,6 +204,12 @@
         if (t === 'tontines') ['members', 'contacts', 'payments', 'payouts', 'topics', 'messages', 'journal', 'reactions'].forEach(x => { d[x] = T(d, x).filter(r => r.tontine_id !== g.id); });
       });
       save(d); gone.forEach(r => notify(t, tid(t, r))); return copy(gone);
+    };
+    // Signalling of voice calls between two tabs of the same browser (the demo has no server).
+    B.signal = (tid, handler) => {
+      if (!bc) return { ok: () => false, send() {}, leave() {} };
+      const ch = new BroadcastChannel('elongo-call-' + tid); ch.onmessage = e => handler(e.data);
+      return { ok: () => true, send: p => ch.postMessage(p), leave: () => ch.close() };
     };
     B.rpc = async (name, a) => {
       const uid = must(), d = load(), code = String(a.p_code || '').trim().toLowerCase(), t = T(d, 'tontines').find(x => x.code === code);
