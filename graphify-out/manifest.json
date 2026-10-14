@@ -1,0 +1,128 @@
+{
+  "app.js": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2130637,
+    "ast_hash": "496b95374e4d25ae31d70859d391a7ac",
+    "semantic_hash": ""
+  },
+  "backend.js": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2130735,
+    "ast_hash": "674f3260b504b2f5e9cc08ccf8077f36",
+    "semantic_hash": ""
+  },
+  "config.js": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2130785,
+    "ast_hash": "be5799249402c14045d2b9f9bf31ae6f",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1791989350.678817,
+    "seen": 1791989531.2130816,
+    "ast_hash": "4ad73f49f5f9be477d9b5999a3f0c260",
+    "semantic_hash": ""
+  },
+  "supabase/functions/push/index.ts": {
+    "mtime": 1791989350.6817875,
+    "seen": 1791989531.2130842,
+    "ast_hash": "e5d4b92dc6685e02f8f95dd60c73dfc3",
+    "semantic_hash": ""
+  },
+  "sw.js": {
+    "mtime": 1791989350.6817875,
+    "seen": 1791989531.213087,
+    "ast_hash": "a3c0e0fff504f98ddecb02db38adb99f",
+    "semantic_hash": ""
+  },
+  "tests/e2e.mjs": {
+    "mtime": 1791989350.6830494,
+    "seen": 1791989531.2130895,
+    "ast_hash": "b514b231fe2d0ad11dd36ccb671d44e8",
+    "semantic_hash": ""
+  },
+  "tests/icons.mjs": {
+    "mtime": 1791989350.6830494,
+    "seen": 1791989531.2130923,
+    "ast_hash": "e533c37e777ac6dea014ce7f4eb188db",
+    "semantic_hash": ""
+  },
+  "tests/push.mjs": {
+    "mtime": 1791989350.6830494,
+    "seen": 1791989531.2130952,
+    "ast_hash": "0e71c934009f8c5bc2fbbf13f19da327",
+    "semantic_hash": ""
+  },
+  "tests/rls.sh": {
+    "mtime": 1791989350.6830494,
+    "seen": 1791989531.2130978,
+    "ast_hash": "c5355796939cd302a9ee6b1e439a9009",
+    "semantic_hash": ""
+  },
+  "vendor/591.supabase.js": {
+    "mtime": 1791989350.6830494,
+    "seen": 1791989531.2131002,
+    "ast_hash": "df10c67b9ceb6cfaeda7b68aee58e5d3",
+    "semantic_hash": ""
+  },
+  "vendor/jspdf.plugin.autotable.min.js": {
+    "mtime": 1791989350.6840672,
+    "seen": 1791989531.2131033,
+    "ast_hash": "1c74f772498ffb37ffefdc20be8be6fb",
+    "semantic_hash": ""
+  },
+  "vendor/jspdf.umd.min.js": {
+    "mtime": 1791989350.6870494,
+    "seen": 1791989531.213106,
+    "ast_hash": "4b16d1b6023fa7271c62b3dee913c3ca",
+    "semantic_hash": ""
+  },
+  "vendor/supabase.js": {
+    "mtime": 1791989350.6870494,
+    "seen": 1791989531.2131085,
+    "ast_hash": "43b205e2c6b10f486a14d87d7d514cff",
+    "semantic_hash": ""
+  },
+  ".github/workflows/static.yml": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2131107,
+    "ast_hash": "5843b87bab43a69620da5201f437f912",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2131133,
+    "ast_hash": "5997cbd03b7fa14e5b531fdbbe972457",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2131162,
+    "ast_hash": "8d6610aedf824030504f334b0707396d",
+    "semantic_hash": ""
+  },
+  "index.html": {
+    "mtime": 1791989350.678817,
+    "seen": 1791989531.2131186,
+    "ast_hash": "4b67e6243552fb5bbce0f4ddb7d57bf2",
+    "semantic_hash": ""
+  },
+  "icons/icon-192.png": {
+    "mtime": 1791989350.6739182,
+    "seen": 1791989531.2131207,
+    "ast_hash": "5a2ea65a1548cea2f944ea00eb5b8a9c",
+    "semantic_hash": ""
+  },
+  "icons/icon-512.png": {
+    "mtime": 1791989350.678817,
+    "seen": 1791989531.213123,
+    "ast_hash": "a156eb94f793a31c1b393192cee8d58c",
+    "semantic_hash": ""
+  },
+  "icons/icon-maskable-512.png": {
+    "mtime": 1791989350.678817,
+    "seen": 1791989531.2131255,
+    "ast_hash": "960da63aae3548b120bfbb45ad818d99",
+    "semantic_hash": ""
+  }
+}
