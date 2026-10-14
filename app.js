@@ -367,6 +367,19 @@
     beep(); ringTimer = setInterval(beep, 2200);
   }
   const ringStop = () => { clearInterval(ringTimer); ringTimer = 0; };
+  function ringbackStart() {   // the caller's own tone: a softer, longer beep than the incoming ring
+    ringStop();
+    const beep = () => { try { ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = .08; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
+    beep(); ringTimer = setInterval(beep, 3000);
+  }
+  async function setSpeaker(on) {   // browsers cannot force the loudspeaker: use the output device list where it exists
+    const au = $('callAudio'); if (!au || !au.setSinkId || !navigator.mediaDevices.enumerateDevices) return false;
+    try {
+      const outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+      const d = outs.find(x => (on ? /speaker|haut-parleur/i : /earpiece|ear|couteur/i).test(x.label));
+      if (!d) return false; await au.setSinkId(d.deviceId); return true;
+    } catch (e) { return false; }
+  }
   async function micStream() { return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   async function startCall(uid, name) {
     if (callSt) { toast('Un appel est déjà en cours.'); return; }
@@ -402,14 +415,17 @@
       if (!m || !S.user || m.to !== S.user.id) return;
       const c = callSt;
       if (m.k === 'invite') {
+        if (c && c.id === m.id && c.role === 'in' && c.state === 'ringing') sig.send({ k: 'ringing', id: m.id, to: m.from, from: S.user.id });   // repeated invitation: tell the caller again
         if (callEnded.has(m.id) || (c && c.id === m.id)) return;
         if (c || !callsSupported()) { sig.send({ k: 'busy', id: m.id, to: m.from, from: S.user.id }); return; }
         callSt = { id: m.id, peer: { uid: m.from, name: String(m.name || 'Un membre').slice(0, 60) }, role: 'in', state: 'ringing', stream: null, pc: null, t0: 0, muted: false, queue: [] };
-        ringStart(); callTimer = setTimeout(() => { if (callSt && callSt.state === 'ringing') endCall(false, 'missed'); }, 50000); renderCall(); return;
+        ringStart(); sig.send({ k: 'ringing', id: m.id, to: m.from, from: S.user.id });
+        callTimer = setTimeout(() => { if (callSt && callSt.state === 'ringing') endCall(false, 'missed'); }, 50000); renderCall(); return;
       }
       if (!c || c.id !== m.id) return;
+      if (m.k === 'ringing' && c.role === 'out' && c.state === 'calling') { if (!c.remoteRings) { c.remoteRings = true; ringbackStart(); renderCall(); } return; }
       if (m.k === 'accept' && c.role === 'out' && c.state === 'calling') {
-        clearTimeout(callTimer); c.state = 'connecting'; renderCall();
+        ringStop(); clearTimeout(callTimer); c.state = 'connecting'; renderCall();
         const pc = makePc(c), offer = await pc.createOffer(); await pc.setLocalDescription(offer); sendSig('offer', { d: { type: offer.type, sdp: offer.sdp } });
       } else if (m.k === 'offer' && c.role === 'in' && c.pc) {
         await c.pc.setRemoteDescription(m.d); await flushIce(c);
@@ -446,11 +462,11 @@
     const b = $('callBox'); if (!b) return; const c = callSt; b.hidden = !c;
     if (!c) { b.innerHTML = ''; return; }
     const md = $('modal'); if (md && md.open) md.close();   // an open window would stay above the call screen
-    const label = c.state === 'ringing' ? 'Appel vocal entrant…' : c.state === 'calling' ? 'Appel en cours…' : c.state === 'connecting' ? 'Connexion…' : 'En communication';
+    const label = c.state === 'ringing' ? 'Appel vocal entrant…' : c.state === 'calling' ? (c.remoteRings ? 'Appel en cours… ça sonne chez ' + c.peer.name : 'Appel en cours… en attente de ' + c.peer.name) : c.state === 'connecting' ? 'Connexion…' : 'En communication';
     b.innerHTML = `<div class="callcard"><span class="av big" style="--h:${hueOf(c.peer.name)}" aria-hidden="true">${esc(initials(c.peer.name))}</span><h2>${esc(c.peer.name)}</h2><p class="sub" id="callState">${label}</p><p class="calltime num" id="callTime"></p>
       <div class="callbtns">${c.state === 'ringing'
         ? '<button type="button" class="callbtn ok" data-act="callaccept" aria-label="Répondre">📞<span>Répondre</span></button><button type="button" class="callbtn no" data-act="calldecline" aria-label="Refuser">✖<span>Refuser</span></button>'
-        : `<button type="button" class="callbtn${c.muted ? ' on' : ''}" data-act="callmute" aria-pressed="${c.muted}" aria-label="Couper le micro">${c.muted ? '🔇' : '🎙️'}<span>${c.muted ? 'Micro coupé' : 'Micro'}</span></button><button type="button" class="callbtn no" data-act="callend" aria-label="Raccrocher">📵<span>Raccrocher</span></button>`}</div></div>`;
+        : `<button type="button" class="callbtn${c.muted ? ' on' : ''}" data-act="callmute" aria-pressed="${c.muted}" aria-label="Couper le micro">${c.muted ? '🔇' : '🎙️'}<span>${c.muted ? 'Micro coupé' : 'Micro'}</span></button><button type="button" class="callbtn${c.loud ? ' on' : ''}" data-act="callspeaker" aria-pressed="${!!c.loud}" aria-label="Haut-parleur">🔊<span>Haut-parleur</span></button><button type="button" class="callbtn no" data-act="callend" aria-label="Raccrocher">📵<span>Raccrocher</span></button>`}</div></div>`;
     renderCallTime();
     const f = b.querySelector('button'); if (f && c.state === 'ringing') f.focus();
   }
@@ -1228,6 +1244,7 @@
       if (act === 'callaccept') { acceptCall(); return; }
       if (act === 'calldecline') { sendSig('decline'); endCall(false, ''); return; }
       if (act === 'callend') { endCall(true, 'ended'); return; }
+      if (act === 'callspeaker') { const c = callSt; if (c) { setSpeaker(!c.loud).then(ok => { if (!callSt) return; if (ok) c.loud = !c.loud; else toast("Votre navigateur ne permet pas de changer la sortie son : utilisez les touches de volume du téléphone."); renderCall(); }); } return; }
       if (act === 'callmute') { const c = callSt; if (c && c.stream) { c.muted = !c.muted; c.stream.getAudioTracks().forEach(t => { t.enabled = !c.muted; }); renderCall(); } return; }
       if (act === 'pickphoto') { $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
