@@ -782,6 +782,9 @@ step('change the beneficiary: swap, pass the turn, message for the group, journa
 await A.goto(url + '#/organisateur');
 await A.waitForSelector('li:has-text("Chantal") [data-act=orga]');
 assert.equal(await Bp.locator('[data-act=deltontine]').count(), 0, 'a plain member cannot delete the tontine');
+const nameW = await A.locator('li.memrow .name').first().evaluate(e => e.getBoundingClientRect().width), rowW = await A.locator('li.memrow').first().evaluate(e => e.getBoundingClientRect().width);
+assert.ok(nameW > rowW * 0.6, 'a member name in the organizer list is shown in full, not squeezed (' + Math.round(nameW) + ' of ' + Math.round(rowW) + ' px)');
+await shot(A, '12-membres-organisateur');
 await A.click('li:has-text("Chantal") [data-act=orga]');
 await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
 await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'visible' });
