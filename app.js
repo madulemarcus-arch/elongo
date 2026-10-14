@@ -358,10 +358,14 @@
   function openSignal() { closeSignal(); if (S.tid && S.user && B.signal) sig = B.signal(S.tid, onSignal); }
   function closeSignal() { if (callSt) endCall(true, 'ended'); if (sig) { sig.leave(); sig = null; } }
   const sendSig = (k, extra) => { if (sig && callSt) sig.send(Object.assign({ k, id: callSt.id, to: callSt.peer.uid, from: S.user.id, name: chatName() || 'Un membre' }, extra || {})); };
+  function unlockAudio() {   // browsers keep a new AudioContext muted until a tap: create and resume it inside a tap handler
+    try { ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); if (ringCtx.state !== 'running') ringCtx.resume(); } catch (e) { /* no Web Audio */ }
+  }
+  document.addEventListener('pointerdown', unlockAudio, { passive: true });
   function ringStart() {
     ringStop();
     const beep = () => {
-      try { ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 440; g.gain.value = .15; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + .35); } catch (e) { /* no sound before a first tap */ }
+      try { unlockAudio(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 440; g.gain.value = .3; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + .35); } catch (e) { /* no sound before a first tap */ }
       buzz([300, 200, 300]);
     };
     beep(); ringTimer = setInterval(beep, 2200);
@@ -369,7 +373,7 @@
   const ringStop = () => { clearInterval(ringTimer); ringTimer = 0; };
   function ringbackStart() {   // the caller's own tone: a softer, longer beep than the incoming ring
     ringStop();
-    const beep = () => { try { ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = .08; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
+    const beep = () => { try { unlockAudio(); const o = ringCtx.createOscillator(), g = ringCtx.createGain(); o.frequency.value = 425; g.gain.value = .3; o.connect(g); g.connect(ringCtx.destination); o.start(); o.stop(ringCtx.currentTime + 1); } catch (e) { /* no sound before a first tap */ } };
     beep(); ringTimer = setInterval(beep, 3000);
   }
   async function setSpeaker(on) {   // browsers cannot force the loudspeaker: use the output device list where it exists
@@ -384,6 +388,7 @@
   async function startCall(uid, name) {
     if (callSt) { toast('Un appel est déjà en cours.'); return; }
     if (!callsSupported()) { toast("Les appels vocaux ne sont pas disponibles sur cet appareil."); return; }
+    unlockAudio();   // still inside the tap that started the call
     if (!sig || (sig.ok && !sig.ok())) { toast("Les appels ne sont pas disponibles pour l'instant : réessayez dans un instant."); return; }
     let stream; try { stream = await micStream(); } catch (e) { toast('Autorisez le micro pour appeler.'); return; }
     callSt = { id: rid(), peer: { uid, name }, role: 'out', state: 'calling', stream, pc: null, t0: 0, muted: false, queue: [], tries: 0 };
