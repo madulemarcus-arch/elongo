@@ -516,7 +516,8 @@ step('chat topics + live messages + unread badge + reply to a message');
 
 // Attachments: photo, PDF, voice
 const png = await readFile(join(root, 'icons/icon-192.png'));
-await Bp.setInputFiles('#fileIn', { name: 'preuve.png', mimeType: 'image/png', buffer: png });
+await Bp.click('[data-act=pickphoto]');   // the camera/gallery button has its own input
+await Bp.setInputFiles('#photoIn', { name: 'preuve.png', mimeType: 'image/png', buffer: png });
 await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("preuve.jpg")');
 await Bp.fill('#chatIn', 'Preuve de paiement');
 await Bp.click('#chatSend');
@@ -533,10 +534,12 @@ await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("vocal-")');
 await Bp.click('#chatSend');
 await Bp.waitForSelector('.msg.me:has-text(".webm")');
 // organizer opens each attachment
-await A.waitForSelector('.msg:has-text("preuve.jpg") [data-act=showatt]');
-await A.click('.msg:has-text("preuve.jpg") [data-act=showatt]');
-await A.waitForSelector('.msg:has-text("preuve.jpg") img.aimg');
+await A.waitForSelector('.msg:has-text("preuve.jpg") img.aimg');   // photos load by themselves, no tap needed
 assert.ok(await A.$eval('.msg:has-text("preuve.jpg") img.aimg', i => i.complete && i.naturalWidth > 0), 'photo displayed');
+await A.click('.msg:has-text("preuve.jpg") .aimgbtn');   // tap to enlarge
+await A.waitForSelector('#modal img.zoomimg');
+assert.ok(await A.locator('#modal a[download]').count(), 'the enlarged photo can be saved');
+await A.click('#modal [data-m=close]');
 await A.click('.msg:has-text("recu.pdf") [data-act=showatt]');
 await A.waitForSelector('.msg:has-text("recu.pdf") a[download="recu.pdf"]');
 await A.click('.msg:has-text(".webm") [data-act=showatt]');

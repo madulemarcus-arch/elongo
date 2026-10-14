@@ -37,7 +37,7 @@ Application de suivi de tontine, **installable comme une vraie application (PWA)
 - **Export PDF** (cagnotte, calendrier, cotisations du tour, paiements par tour).
 - **Réactions emoji** (👍 ❤️ 😂 😮 😢 🙏) : bouton « ☺ Réagir » sous chaque message ; une réaction par personne et par message, visible en direct par tout le groupe (toucher une pastille la rejoint ou la retire, un autre emoji remplace le précédent). **À faire une fois : relancer `supabase/schema.sql`** (nouvelle table `reactions`).
 - **Répondre à un message** (comme sur WhatsApp) : bouton ↩ sous un message, ou glisser le message vers la droite sur téléphone ; l'extrait cité s'affiche au-dessus de la réponse et un clic dessus ramène au message d'origine. **À faire une fois : relancer `supabase/schema.sql`** (nouvelle colonne `reply`).
-- **Discussion par sujets** avec photos (réduites avant envoi), vocaux (enregistrés dans l'appli) et PDF.
+- **Discussion par sujets** avec photos, vocaux (enregistrés dans l'appli) et PDF. **Photos** : bouton 📷 (appareil photo ou galerie), réduites avant l'envoi ; elles s'affichent d'elles-mêmes dans la discussion et un appui les agrandit, avec « Enregistrer la photo ».
 
 ## Lancer
 

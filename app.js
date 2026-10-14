@@ -116,7 +116,7 @@
     allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [], reactions: [],
     loaded: false, members: [], pending: [], preview: null,
   };
-  const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
+  const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), attBusy: new Set(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
   // The principal administrator is the account in tontines.owner_id; every organizer (isAdmin) has the same rights, including over the principal.
   const isCreator = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
@@ -839,12 +839,12 @@
     <div id="chatlog" class="chatlog" role="log" aria-live="polite" tabindex="0"></div>
     <div id="replyBox" class="pendbox replybox" hidden></div>
     <div id="pendingBox" class="pendbox" hidden></div>
-    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickfile" aria-label="Joindre une photo, un audio ou un PDF" title="Joindre">📎</button>
+    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickphoto" aria-label="Partager une photo (appareil photo ou galerie)" title="Photo">📷</button><button type="button" class="ico" data-act="pickfile" aria-label="Joindre un audio ou un PDF" title="Joindre un document">📎</button>
       <input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message">
       <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
-    <input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
+    <input id="photoIn" type="file" accept="image/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
     <p class="hint" id="chatNote" hidden></p>
-    <p class="hint">📎 photo ou PDF, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Le micro de votre appareil enregistre le vocal.</p></section>`;
+    <p class="hint">📷 photo (appareil photo ou galerie), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>`;
   const dayLabel = ts => { const d = new Date(ts), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1); const same = (a, b) => a.toDateString() === b.toDateString();
     return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
   const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -876,7 +876,7 @@
     let att = '';
     if (a) {
       const v = ui.att.get(a.path);
-      const body = v ? (a.kind === 'image' ? `<img class="aimg" src="${v.url}" alt="${esc(a.name)}">` : a.kind === 'audio' ? `<audio controls src="${v.url}"></audio>` : `<a class="lnk" href="${v.url}" download="${esc(a.name)}">Enregistrer le document</a>`)
+      const body = v ? (a.kind === 'image' ? `<button type="button" class="aimgbtn" data-act="zoomimg" data-mid="${esc(m.id)}" aria-label="Agrandir la photo"><img class="aimg" src="${v.url}" alt="${esc(a.name)}"></button>` : a.kind === 'audio' ? `<audio controls src="${v.url}"></audio>` : `<a class="lnk" href="${v.url}" download="${esc(a.name)}">Enregistrer le document</a>`)
         : `<button type="button" class="mini" data-act="showatt" data-mid="${esc(m.id)}">${a.kind === 'audio' ? 'Écouter le vocal' : a.kind === 'image' ? 'Afficher la photo' : 'Ouvrir le document'} (${esc(fmtSize(a.size))})</button>`;
       att = `<div class="att"><span class="sub">${esc(a.name)}</span><br>${body}</div>`;
     }
@@ -907,7 +907,7 @@
     $('chatNote').hidden = can && open;
     $('chatNote').textContent = !can ? 'Rejoignez la tontine pour participer à la discussion.' : 'Ce sujet est clos. Rouvrez-le pour y écrire.';
     renderPending(); renderReply(); updateRecBtn();
-    chrome();
+    chrome(); autoLoadPhotos();
   }
   // Images are shrunk before upload; every attachment must end up under the size limit.
   async function shrinkImage(file) {
@@ -946,6 +946,13 @@
       };
       mr.start(); ui.rec = mr; ui.recT = setTimeout(() => { if (mr.state === 'recording') mr.stop(); }, 180000); updateRecBtn();
     } catch (e) { toast("Micro indisponible : choisissez un fichier audio."); $('voiceIn').click(); }
+  }
+  // Photos of the open topic are fetched as soon as they are in the list (latest 12, one by one), so they show up without a tap.
+  function autoLoadPhotos() {
+    const todo = S.msgs.filter(m => m.tp === ui.topic && m.att && m.att.kind === 'image' && !ui.att.has(m.att.path) && !ui.attBusy.has(m.att.path)).slice(-12);
+    if (!todo.length) return;
+    todo.forEach(m => ui.attBusy.add(m.att.path));   // a failed download is not retried in a loop: the "Afficher la photo" button stays
+    (async () => { for (const m of todo) { try { await loadAtt(m.att); } catch (e) { /* offline or removed */ } } if (S.view === 'discussion') renderChatParts(); })();
   }
   async function loadAtt(a) {
     if (ui.att.has(a.path)) return ui.att.get(a.path);
@@ -1098,6 +1105,12 @@
       if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
       if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
       if (act === 'pickfile') { $('fileIn').click(); return; }
+      if (act === 'zoomimg') {
+        const m = S.msgs.find(x => x.id === b.dataset.mid), v = m && m.att && ui.att.get(m.att.path); if (!v) return;
+        $('modalBody').innerHTML = `<h2>Photo de ${esc(m.author_name)}</h2><p class="sub">${esc(fmtTime(m.ts))}</p><img class="zoomimg" src="${v.url}" alt="${esc(m.att.name)}"><div class="dlg-actions"><a class="lnk" href="${v.url}" download="${esc(m.att.name)}">Enregistrer la photo</a><button type="button" data-m="close">Fermer</button></div>`;
+        $('modal').showModal(); return;
+      }
+      if (act === 'pickphoto') { $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
       if (act === 'pushon') { await enablePush(); return; }
       if (act === 'pushlater') { store.set('lisanga.pushlater', '1'); render(); return; }
@@ -1346,7 +1359,7 @@
     const i = ev.target;
     if (i && i.closest && i.closest('#modalBody')) { const er = $('quickErr') || $('payErr'); if (er) er.textContent = ''; }   // a correction clears the previous error
     if (i && i.id === 'qpMember') { const o = i.selectedOptions[0]; if (o && $('qpAmount')) $('qpAmount').value = o.dataset.rest; return; }
-    if (i && (i.id === 'fileIn' || i.id === 'voiceIn')) { const f = i.files[0]; i.value = ''; if (f) attach(f); return; }
+    if (i && (i.id === 'fileIn' || i.id === 'voiceIn' || i.id === 'photoIn')) { const f = i.files[0]; i.value = ''; if (f) attach(f); return; }
     if (i && i.dataset && i.dataset.d && i.type === 'checkbox') ui.draft[i.dataset.d] = i.checked;
     const p = i && i.closest && i.closest('input[data-phone]'); if (!p) return;
     const phone = p.value.trim().slice(0, 30);
