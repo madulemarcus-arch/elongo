@@ -395,3 +395,16 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 /* organizer lists: the name gets the full line (next to the number), buttons and phone wrap underneath instead of squeezing it */
 .row.memrow > .grow { flex: 1 1 calc(100% - 50px); }
 .row.memrow { row-gap: 8px; }
+
+/* ----- emoji reactions ----- */
+.rx { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rchip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 9px; border-radius: 99px; border: 1px solid var(--line); background: var(--tint); color: var(--ink); font-size: .9rem; box-shadow: none; }
+.rchip span { font-size: .78rem; font-weight: 700; }
+.rchip.mine { background: var(--coin-tint); border-color: var(--coin); color: var(--on-tint); }
+.msg.me .rchip { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: inherit; }
+.msg.me .rchip.mine { background: var(--coin); color: var(--coin-ink); border-color: var(--coin); }
+.rpick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; padding: 5px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); width: max-content; max-width: 100%; }
+.rpick button { min-width: 38px; min-height: 38px; padding: 0; border: 0; border-radius: 99px; background: transparent; font-size: 1.35rem; box-shadow: none; }
+.rpick button:active { background: var(--tint); }
+.msg .meta button.link[data-act="reactpick"] { opacity: 1; font-weight: 700; font-size: .85rem; padding: 6px 8px; margin: -4px 0; min-height: 32px; color: var(--accent); }
+.msg.me .meta button.link[data-act="reactpick"] { color: inherit; }

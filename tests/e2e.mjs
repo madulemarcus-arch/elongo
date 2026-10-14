@@ -482,6 +482,22 @@ await A.waitForSelector('#topicBar .chip:has-text("Retard de mars")');
 await A.click('#topicBar .chip:has-text("Retard de mars")');
 await A.waitForSelector('.msg:has-text("Je paie demain")');
 await A.waitForSelector('#chatBadge[hidden]', { state: 'attached' });
+// Emoji reactions: one per person and message, shown live to everyone, tap again to remove
+const row = p => p.locator('.mrow:has-text("Je paie demain")');
+await A.click('.mrow:has-text("Je paie demain") [data-act=reactpick]');
+await A.click('.rpick [data-e="👍"]');
+await Bp.waitForSelector('.mrow:has-text("Je paie demain") .rchip:has-text("👍")');
+assert.equal((await row(Bp).locator('.rchip').first().textContent()).replace(/\s+/g, ''), '👍1');
+await Bp.click('.mrow:has-text("Je paie demain") .rchip');   // joins the same reaction
+await A.waitForSelector('.mrow:has-text("Je paie demain") .rchip:has-text("2")');
+await Bp.click('.mrow:has-text("Je paie demain") [data-act=reactpick]');
+await Bp.click('.rpick [data-e="❤️"]');   // changing replaces her previous reaction
+await A.waitForSelector('.mrow:has-text("Je paie demain") .rchip:has-text("❤️")');
+assert.equal(await row(A).locator('.rchip').count(), 2, 'one reaction per person: 👍 (1) and ❤️ (1)');
+await Bp.click('.mrow:has-text("Je paie demain") .rchip.mine');   // tapping her own emoji removes it
+await A.waitForFunction(() => document.querySelectorAll('.mrow .rchip').length === 1);
+await shot(A, '09a-reactions');
+
 // Reply to a message, as on WhatsApp: the quote is shown above the answer and can be cancelled
 await A.click('.mrow:has-text("Je paie demain") [data-act=reply]');
 await A.waitForSelector('#replyBox:not([hidden]):has-text("Je paie demain")');
