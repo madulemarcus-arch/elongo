@@ -22,6 +22,7 @@
   const roundStart = (c, r) => plusDays(c.start_date, r * c.interval_days);
   const roundEnd = (c, r) => plusDays(c.start_date, (r + 1) * c.interval_days);
   const roundDate = roundEnd;
+  const callBtn = m => m.user_id && S.user && m.user_id !== S.user.id && m.status === 'active' && callsSupported() && sig ? `<button type="button" class="callico" data-act="callmember" data-uid="${esc(m.user_id)}" data-name="${esc(m.name)}" aria-label="Appeler ${esc(m.name)} en vocal" title="Appeler en vocal">📞</button>` : '';
   const memberLink = m => `<button type="button" class="name-link" data-act="member" data-id="${esc(m.id)}">${esc(m.name)}</button>`;
   function tourPreview(start, days, n) {
     days = Math.round(Number(days));
@@ -610,7 +611,7 @@
         return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${punctuality(m).streak >= 1 ? ` <span class="star" title="${punctuality(m).streak} tour${punctuality(m).streak > 1 ? 's' : ''} payé${punctuality(m).streak > 1 ? 's' : ''} à temps d'affilée">⭐${punctuality(m).streak > 1 ? punctuality(m).streak : ''}</span>` : ''}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
           <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}${rec && (rec.log || []).some(x => x.pending) ? ' <span class="pill wait">⏳ en attente d\'envoi</span>' : ''}</div>
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
-          <div class="side"><span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
+          <div class="side">${callBtn(m)}<span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
       }).join('') + '</ul></section>';
   }
   // Changing who receives the pot: swap two members who are not served yet, or send one to the end of the order.

@@ -424,6 +424,7 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .callcard .sub { color: rgba(255, 255, 255, .8); }
 .calltime { min-height: 1.4em; font-size: 1.3rem; font-weight: 700; margin: 0; }
 .av.big { width: 104px; height: 104px; font-size: 2.4rem; background: hsl(var(--h, 220) 55% 42%); color: #fff; }
+button.callico { width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; border-radius: 50%; background: #1f9d5c; color: #fff; font-size: 1.1rem; display: inline-grid; place-items: center; flex: none; box-shadow: 0 2px 8px rgba(31, 157, 92, .35); }
 button.callme { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; font-size: 1.05rem; font-weight: 800; border-radius: 14px; border: 0; background: #1f9d5c; color: #fff; box-shadow: 0 4px 14px rgba(31, 157, 92, .35); }
 button.callme:active { transform: scale(.98); }
 .callbtns { display: flex; gap: 32px; margin-top: 22px; padding-bottom: 28px; }
