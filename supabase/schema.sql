@@ -328,7 +328,7 @@ end $$;
 -- Chemin d'un fichier : <tontine_id>/<user_id>/<nom>. Lecture : membres actifs. Écriture : dans son propre dossier.
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('lisanga', 'lisanga', false, 5242880)
-on conflict (id) do update set public = false, file_size_limit = 5242880;
+on conflict (id) do update set public = false, file_size_limit = 20971520;   -- 20 Mo : les vidéos (les photos sont réduites avant l'envoi, l'appli limite les autres fichiers à 5 Mo)
 
 drop policy if exists lisanga_read   on storage.objects;
 drop policy if exists lisanga_insert on storage.objects;

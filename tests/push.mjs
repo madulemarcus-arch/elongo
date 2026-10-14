@@ -95,7 +95,8 @@ step('payout notification');
 // ---------- messages ----------
 reset();
 state.messages.push({ id: 'g1', tontine_id: 't1', topic_id: null, author_id: ALICE, author_name: 'Alice', body: 'Je paie demain', att: null },
-  { id: 'g2', tontine_id: 't1', topic_id: 'tp1', author_id: ALICE, author_name: 'Alice', body: '', att: { kind: 'audio' } });
+  { id: 'g2', tontine_id: 't1', topic_id: 'tp1', author_id: ALICE, author_name: 'Alice', body: '', att: { kind: 'audio' } },
+  { id: 'g3', tontine_id: 't1', topic_id: null, author_id: ALICE, author_name: 'Alice', body: '', att: { kind: 'video' } });
 assert.equal((await j(await call({ kind: 'message', message_id: 'g1' }, { token: 'tok-bob' }))).status, 403, 'only the author announces a message');
 await call({ kind: 'message', message_id: 'g1' }, { token: 'tok-alice' });
 assert.deepEqual(to(), ['e-bob', 'e-owner'], 'everyone but the author');
@@ -104,6 +105,9 @@ assert.equal(state.sent[0].body, 'Je paie demain');
 state.sent = [];
 await call({ kind: 'message', message_id: 'g2' }, { token: 'tok-alice' });
 assert.equal(state.sent[0].body, 'Retard de mars : 🎤 Message vocal');
+state.sent = [];
+await call({ kind: 'message', message_id: 'g3' }, { token: 'tok-alice' });
+assert.equal(state.sent[0].body, '🎬 Vidéo');
 step('message notifications');
 
 // ---------- reminders (tour 1 ends 2026-10-10, 3 days notice) ----------

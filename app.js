@@ -816,7 +816,7 @@
   }
 
   // ---------- Group chat ----------
-  const EXT = { m4a: 'audio/mp4', mp3: 'audio/mpeg', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+  const EXT = { m4a: 'audio/mp4', mp3: 'audio/mpeg', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', '3gp': 'video/3gpp', pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
   function allTopics() {
     const m = new Map([['general', { id: 'general', title: 'Général', author_id: null }]]);
     S.topics.forEach(t => m.set(t.id, t)); return m;
@@ -839,18 +839,18 @@
     <div id="chatlog" class="chatlog" role="log" aria-live="polite" tabindex="0"></div>
     <div id="replyBox" class="pendbox replybox" hidden></div>
     <div id="pendingBox" class="pendbox" hidden></div>
-    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickphoto" aria-label="Partager une photo (appareil photo ou galerie)" title="Photo">📷</button><button type="button" class="ico" data-act="pickfile" aria-label="Joindre un audio ou un PDF" title="Joindre un document">📎</button>
+    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickphoto" aria-label="Partager une photo ou une vidéo (appareil photo ou galerie)" title="Photo ou vidéo">📷</button><button type="button" class="ico" data-act="pickfile" aria-label="Joindre un audio ou un PDF" title="Joindre un document">📎</button>
       <input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message">
       <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
-    <input id="photoIn" type="file" accept="image/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
+    <input id="photoIn" type="file" accept="image/*,video/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
     <p class="hint" id="chatNote" hidden></p>
-    <p class="hint">📷 photo (appareil photo ou galerie), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>`;
+    <p class="hint">📷 photo ou vidéo (appareil photo ou galerie : vidéo jusqu'à ${fmtSize(B.maxVideo)}, clips courts de préférence), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>`;
   const dayLabel = ts => { const d = new Date(ts), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1); const same = (a, b) => a.toDateString() === b.toDateString();
     return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
   const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const hueOf = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   // WhatsApp-style reply: the quoted message is copied into the reply (author and a short excerpt), so it survives a deletion.
-  const attLabel = a => a.kind === 'audio' ? '🎤 Vocal' : a.kind === 'image' ? '📷 Photo' : '📄 ' + a.name;
+  const attLabel = a => a.kind === 'audio' ? '🎤 Vocal' : a.kind === 'image' ? '📷 Photo' : a.kind === 'video' ? '🎬 Vidéo' : '📄 ' + a.name;
   const snippet = m => (m.body ? m.body : m.att ? attLabel(m.att) : '').replace(/\s+/g, ' ').slice(0, 100);
   function renderReply() {
     const b = $('replyBox'); if (!b) return; const r = ui.replyTo, cur = allTopics().get(ui.topic); b.hidden = !r || !!(cur && cur.closed);
@@ -876,8 +876,8 @@
     let att = '';
     if (a) {
       const v = ui.att.get(a.path);
-      const body = v ? (a.kind === 'image' ? `<button type="button" class="aimgbtn" data-act="zoomimg" data-mid="${esc(m.id)}" aria-label="Agrandir la photo"><img class="aimg" src="${v.url}" alt="${esc(a.name)}"></button>` : a.kind === 'audio' ? `<audio controls src="${v.url}"></audio>` : `<a class="lnk" href="${v.url}" download="${esc(a.name)}">Enregistrer le document</a>`)
-        : `<button type="button" class="mini" data-act="showatt" data-mid="${esc(m.id)}">${a.kind === 'audio' ? 'Écouter le vocal' : a.kind === 'image' ? 'Afficher la photo' : 'Ouvrir le document'} (${esc(fmtSize(a.size))})</button>`;
+      const body = v ? (a.kind === 'image' ? `<button type="button" class="aimgbtn" data-act="zoomimg" data-mid="${esc(m.id)}" aria-label="Agrandir la photo"><img class="aimg" src="${v.url}" alt="${esc(a.name)}"></button>` : a.kind === 'audio' ? `<audio controls src="${v.url}"></audio>` : a.kind === 'video' ? `<video controls playsinline preload="metadata" src="${v.url}"></video>` : `<a class="lnk" href="${v.url}" download="${esc(a.name)}">Enregistrer le document</a>`)
+        : `<button type="button" class="mini" data-act="showatt" data-mid="${esc(m.id)}">${a.kind === 'audio' ? 'Écouter le vocal' : a.kind === 'image' ? 'Afficher la photo' : a.kind === 'video' ? '▶ Voir la vidéo' : 'Ouvrir le document'} (${esc(fmtSize(a.size))})</button>`;
       att = `<div class="att"><span class="sub">${esc(a.name)}</span><br>${body}</div>`;
     }
     const rp = m.reply && m.reply.name ? `<button type="button" class="quote" data-act="gotomsg" data-mid="${esc(m.reply.id || '')}" aria-label="Voir le message cité"><b>${esc(m.reply.name)}</b><span>${esc(m.reply.text || '')}</span></button>` : '';
@@ -924,11 +924,12 @@
   async function attach(file) {
     try {
       let type = file.type || EXT[(file.name.split('.').pop() || '').toLowerCase()] || '';
-      const kind = type.startsWith('image/') ? 'image' : type.startsWith('audio/') ? 'audio' : type === 'application/pdf' ? 'file' : '';
-      if (!kind) throw { msg: 'Type non pris en charge. Choisissez une image, un audio ou un PDF.' };
+      const kind = type.startsWith('image/') ? 'image' : type.startsWith('audio/') ? 'audio' : type.startsWith('video/') ? 'video' : type === 'application/pdf' ? 'file' : '';
+      if (!kind) throw { msg: 'Type non pris en charge. Choisissez une photo, une vidéo, un audio ou un PDF.' };
       let blob = file, name = file.name;
       if (kind === 'image' && type !== 'image/gif') { blob = await shrinkImage(file); type = 'image/jpeg'; name = name.replace(/\.[^.]+$/, '') + '.jpg'; }
-      if (blob.size > B.maxFile) throw { msg: 'Fichier trop lourd. Maximum ' + fmtSize(B.maxFile) + '.' };
+      const lim = kind === 'video' ? B.maxVideo : B.maxFile;
+      if (blob.size > lim) throw { msg: (kind === 'video' ? 'Vidéo trop lourde. Maximum ' + fmtSize(lim) + ' : filmez un clip plus court ou baissez la qualité de la caméra.' : 'Fichier trop lourd. Maximum ' + fmtSize(lim) + '.') };
       ui.pending = { blob, type, size: blob.size, name, kind }; renderPending();
     } catch (e) { toast(e && e.msg ? e.msg : 'Ce fichier ne peut pas être joint (format non lisible).'); }
   }
@@ -1337,7 +1338,7 @@
         try {
           let att = null;
           if (pend) {
-            toast('Envoi du fichier…');
+            toast(pend.kind === 'video' ? 'Envoi de la vidéo… cela peut prendre un moment.' : 'Envoi du fichier…');
             const ext = (pend.name.split('.').pop() || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin', path = S.tid + '/' + S.user.id + '/' + rid() + '.' + ext;
             await B.putFile(path, pend.blob, pend.type); att = { path, name: pend.name, type: pend.type, size: pend.size, kind: pend.kind };
           }

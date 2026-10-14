@@ -533,6 +533,19 @@ await Bp.click('#recBtn');
 await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("vocal-")');
 await Bp.click('#chatSend');
 await Bp.waitForSelector('.msg.me:has-text(".webm")');
+// Video: shown behind a "play" button (not downloaded automatically), and refused when too heavy
+await Bp.click('[data-act=pickphoto]');
+await Bp.setInputFiles('#photoIn', { name: 'gros.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2_000_000) });
+await Bp.waitForSelector('#toast.show:has-text("Vidéo trop lourde")');
+await Bp.click('[data-act=pickphoto]');
+await Bp.setInputFiles('#photoIn', { name: 'clip.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(40_000, 7) });
+await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("clip.mp4")');
+await Bp.click('#chatSend');
+await Bp.waitForSelector('.msg.me:has-text("clip.mp4")');
+await A.waitForSelector('.msg:has-text("clip.mp4") [data-act=showatt]:has-text("Voir la vidéo")');
+assert.equal(await A.locator('.msg:has-text("clip.mp4") video').count(), 0, 'a video is not downloaded before it is requested');
+await A.click('.msg:has-text("clip.mp4") [data-act=showatt]');
+await A.waitForSelector('.msg:has-text("clip.mp4") video[controls]');
 // organizer opens each attachment
 await A.waitForSelector('.msg:has-text("preuve.jpg") img.aimg');   // photos load by themselves, no tap needed
 assert.ok(await A.$eval('.msg:has-text("preuve.jpg") img.aimg', i => i.complete && i.naturalWidth > 0), 'photo displayed');
