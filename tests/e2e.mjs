@@ -818,7 +818,11 @@ await A.click('#modalBody [data-act=callmember]');
 await Bp.waitForSelector('#callBox:not([hidden]) [data-act=callaccept]');
 assert.ok((await Bp.textContent('#callBox')).includes('Marcus'), 'the callee sees who is calling');
 assert.ok((await A.textContent('#callBox')).includes('Appel en cours'), 'the caller sees the call going out');
-await A.waitForFunction(() => document.querySelector('#callBox').textContent.includes('ça sonne chez'));   // the other phone confirmed it is ringing
+await A.waitForFunction(() => document.querySelector('#callBox').textContent.includes('ça sonne chez'));
+await A.click('[data-act=callspeaker]');   // loud mode while the waiting tone plays
+await A.waitForSelector('[data-act=callspeaker][aria-pressed=true]');
+assert.ok((await A.textContent('#callBox')).includes('sonnerie d\'attente est plus forte'), 'waiting-tone loud mode is explained');
+await A.click('[data-act=callspeaker]');   // back to normal before the call is answered   // the other phone confirmed it is ringing
 await Bp.click('[data-act=callaccept]');
 await A.waitForSelector('#callBox:has-text("En communication")', { timeout: 20000 });
 await Bp.waitForSelector('#callBox:has-text("En communication")', { timeout: 20000 });
