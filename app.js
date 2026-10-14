@@ -519,6 +519,7 @@
   const focusKey = el => el.dataset && (el.dataset.d ? 'd:' + el.dataset.d : el.dataset.phone ? 'p:' + el.dataset.phone : el.id ? 'i:' + el.id : '');
   function render() {
     const v = $('view'), a = document.activeElement;
+    v.classList.toggle('split', S.view === 'discussion');   // chat + dashboard side by side on wide screens
     chrome();
     const ready = S.loaded || ['auth', 'welcome', 'join'].includes(S.view);
     if (!ready) { v.innerHTML = '<p class="empty">Chargement…</p>'; ui.rendered = ''; return; }
@@ -988,7 +989,27 @@
       <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
     <input id="photoIn" type="file" accept="image/*,video/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
     <p class="hint" id="chatNote" hidden></p>
-    <p class="hint">📷 photo ou vidéo (appareil photo ou galerie : vidéo jusqu'à ${fmtSize(B.maxVideo)}, clips courts de préférence), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>`;
+    <p class="hint">📷 photo ou vidéo (appareil photo ou galerie : vidéo jusqu'à ${fmtSize(B.maxVideo)}, clips courts de préférence), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>
+    <aside class="panel chatdash" id="chatDash" aria-label="Tableau de bord"></aside>`;
+  // Side dashboard shown next to the chat (hidden on narrow screens, where the Accueil tab has the same figures).
+  function dashHtml() {
+    const c = S.cfg, D = c ? derive() : null;
+    if (!D || !D.n) return '<div class="livehead"><span class="dot" aria-hidden="true"></span><h2>Tableau de bord</h2></div><p class="hint">Aucun membre pour l\'instant.</p>';
+    const head = t => `<div class="livehead"><span class="dot" aria-hidden="true"></span><h2>${t}</h2></div>`;
+    if (D.cur >= D.n) return head('Tableau de bord') + `<p class="hint">Le cycle est terminé : les ${D.n} membres ont reçu la cagnotte.</p>`;
+    const pot = c.amount * D.n, due = roundDate(c, D.cur), late = dayDiff(due, todayISO()) < 0, pct = Math.min(100, Math.round(100 * D.got / pot));
+    const owing = S.members.filter(m => !D.paidIds.has(m.id));
+    const me = myRow(), rest = me ? c.amount - (D.amt.get(me.id) || 0) : 0;
+    const mine = me && S.members.some(m => m.id === me.id) ? `<div class="mine${D.paidIds.has(me.id) ? '' : late ? ' late' : ''}">${D.paidIds.has(me.id) ? 'Votre cotisation est payée ✅' : `Il vous reste <b>${money(rest)}</b> à verser${late ? ' (en retard)' : ''}.`}</div>` : '';
+    const next = S.members.slice(D.cur + 1, D.cur + 4).map((m, k) => `<li class="row"><span class="rn num">${D.cur + 2 + k}</span><div class="grow"><div class="name">${esc(m.name)}</div></div><span class="sub">${esc(rel(roundEnd(c, D.cur + 1 + k)))}</span></li>`).join('');
+    return head('Tableau de bord') + `<p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h3 class="dashname">${esc(D.benef.name)}</h3>
+      <p class="hint">Fin du tour : <b>${esc(fmtShort(due))}</b> · ${esc(rel(due))}${late && D.got < pot ? ' · en retard' : ''}</p>
+      <div class="lbl num dashpot">${money(D.got)} <span class="sub">sur ${money(pot)}</span></div>
+      <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+      <p class="hint num">${D.paidIds.size}/${D.n} membres ont tout versé</p>${mine}
+      <h3 class="dashh">${owing.length ? 'Reste à verser' : 'Tout est versé 🎉'}</h3>${owing.length ? '<ul class="list">' + owing.slice(0, 8).map(m => `<li class="row"><div class="grow"><div class="name">${esc(m.name)}</div></div><span class="sub num">${money(c.amount - (D.amt.get(m.id) || 0))}</span></li>`).join('') + '</ul>' + (owing.length > 8 ? `<p class="hint">et ${owing.length - 8} autre${owing.length - 8 > 1 ? 's' : ''}</p>` : '') : ''}
+      ${next ? `<h3 class="dashh">Prochains tours</h3><ul class="list">${next}</ul>` : ''}<a class="lnk" href="#/bord">Voir l'accueil</a>`;
+  }
   const dayLabel = ts => { const d = new Date(ts), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1); const same = (a, b) => a.toDateString() === b.toDateString();
     return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
   const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -1051,6 +1072,7 @@
     $('chatNote').hidden = can && open;
     $('chatNote').textContent = !can ? 'Rejoignez la tontine pour participer à la discussion.' : 'Ce sujet est clos. Rouvrez-le pour y écrire.';
     renderPending(); renderReply(); updateRecBtn();
+    $('chatDash').innerHTML = dashHtml();
     chrome(); autoLoadPhotos();
   }
   // Images are shrunk before upload; every attachment must end up under the size limit.
