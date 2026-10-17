@@ -923,7 +923,10 @@
       <div class="invite-code" aria-label="Code d'invitation">${esc(c.code)}</div>
       <p style="margin:10px 0 0"><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink('', "Rejoignez notre tontine « " + c.name + " » sur Elongo : " + inviteLink()))}">Envoyer l'invitation sur WhatsApp</a> <button class="mini" data-act="copylink">Copier le lien</button></p>
       ${c.join_open ? '' : '<p class="hint" style="margin-top:8px">Les inscriptions sont fermées : réactivez-les dans les réglages.</p>'}</div>`;
-    const exp = `<div><h3>Export</h3><p class="hint" style="margin:6px 0 10px">Un PDF avec la cagnotte, le calendrier, les cotisations du tour, le récapitulatif par membre, l'historique des versements et le tableau des paiements. Le fichier Excel (CSV) liste tous les versements avec leur date, leur tour et leur moyen de paiement.</p><div class="versrow"><button class="primary" id="pdfBtn" type="button" data-act="exportpdf">Exporter en PDF</button><button id="csvBtn" type="button" data-act="exportcsv">Exporter les versements (Excel)</button></div></div>`;
+    const D0 = derive();
+    const exp = `<div><h3>Export</h3><p class="hint" style="margin:6px 0 10px">Un PDF avec la cagnotte, le calendrier, les cotisations du tour, le récapitulatif par membre, l'historique des versements et le tableau des paiements. Le fichier Excel (CSV) liste tous les versements avec leur date, leur tour et leur moyen de paiement.</p><div class="versrow"><button class="primary" id="pdfBtn" type="button" data-act="exportpdf">Exporter en PDF</button><button id="csvBtn" type="button" data-act="exportcsv">Exporter les versements (Excel)</button></div>
+      <h3 style="margin-top:16px">Rapport de fin de tour</h3><p class="hint" style="margin:6px 0 10px">Une page PDF pour un tour : bénéficiaire, cagnotte, qui a payé quoi et quand, pénalités, ce qui reste à payer et espaces de signature.</p>
+      <div class="versrow"><select data-d="rp.r" id="rpSel" aria-label="Tour">${S.members.slice(0, Math.min(D0.cur, D0.n - 1) + 1).map((m, r) => `<option value="${r}"${String(dv('rp.r', Math.max(0, Math.min(D0.cur - 1, D0.n - 1)))) === String(r) ? ' selected' : ''}>Tour ${r + 1} - ${esc(m.name)}${S.out.has(r) ? '' : ' (en cours)'}</option>`).join('')}</select><button class="primary" id="rpBtn" type="button" data-act="roundpdf">Rapport du tour (PDF)</button></div></div>`;
     const cfg = `<div><h3>Réglages de la tontine</h3><form class="grid" id="cfgForm" style="margin-top:12px">
       <label class="f">Nom du groupe<input data-d="s.name" value="${esc(dv('s.name', c.name))}" required maxlength="60"></label>
       <label class="f">Cotisation par membre<input data-d="s.amount" value="${esc(dv('s.amount', c.amount))}" type="number" min="1" step="any" required></label>
@@ -1151,6 +1154,70 @@
     doc.save('tontine-' + slug + '.pdf'); toast('PDF enregistré.');
   }
 
+  // ---------- Round report (one A4 page for a round: who paid, penalties, payout, signatures) ----------
+  const penOfRound = (c, r, m) => {
+    if (!c.penalty) return 0;
+    const due = roundDate(c, r), rec = S.pay.get(r + '_' + m.id);
+    return (isFull(rec) ? (rec.done_on || rec.paid_on || '') > due : todayISO() > due) ? c.penalty : 0;
+  };
+  function exportRoundPdf(r) {
+    const c = S.cfg, D = derive();
+    if (!c || !D.n || !(r >= 0 && r < D.n)) { toast('Choisissez un tour.'); return; }
+    if (!(window.jspdf && window.jspdf.jsPDF)) { toast("Le module PDF ne s'est pas chargé. Rechargez la page."); return; }
+    const m$ = n => pdfNum(n) + ' ' + c.currency, doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' }), navy = [19, 37, 91], W = 595;
+    const benef = S.members[r], out = S.out.get(r), cur = r === D.cur, pot = c.amount * D.n;
+    const rows = S.members.map(m => {
+      const rec = S.pay.get(r + '_' + m.id), a = paidOf(rec), pen = penOfRound(c, r, m), meths = [...new Set(((rec && rec.log) || []).map(x => x.m).filter(Boolean))].map(methodName).join(', ');
+      return { m, rec, a, rest: Math.max(0, c.amount - a), full: a >= c.amount, pen, penPaid: !!(rec && rec.penalty_paid), when: rec && (rec.done_on || rec.paid_on) || '', meths };
+    });
+    const got = rows.reduce((t, x) => t + x.a, 0), nFull = rows.filter(x => x.full).length, penDue = rows.reduce((t, x) => t + x.pen, 0), penSettled = rows.reduce((t, x) => t + (x.penPaid ? x.pen : 0), 0);
+    // header band
+    doc.setFillColor(...navy); doc.rect(0, 0, W, 86, 'F');
+    doc.setTextColor(255); doc.setFontSize(11); doc.text('RAPPORT DE FIN DE TOUR', 40, 32);
+    doc.setFontSize(22); doc.text(c.name, 40, 60);
+    doc.setFontSize(10); doc.text('Tour ' + (r + 1) + ' sur ' + D.n, W - 40, 32, { align: 'right' });
+    doc.text('Édité le ' + fmtShort(todayISO()), W - 40, 60, { align: 'right' });
+    doc.setTextColor(30);
+    // summary tiles
+    const status = out ? 'Cagnotte remise le ' + fmtShort(out.paid_on) : cur ? 'Tour en cours' : r > D.cur ? 'Tour à venir' : 'Remise non enregistrée';
+    const tiles = [['Bénéficiaire', benef ? benef.name : '-'], ['Période', fmtShort(roundStart(c, r)) + ' au ' + fmtShort(roundEnd(c, r))], ['Statut', status],
+      ['Cagnotte attendue', m$(pot)], ['Encaissé', m$(got) + ' (' + Math.round(100 * got / pot) + ' %)'], ['Cotisations complètes', nFull + ' sur ' + D.n]];
+    tiles.forEach((t, i) => {
+      const x = 40 + (i % 3) * 178, y = 106 + Math.floor(i / 3) * 60;
+      doc.setFillColor(243, 245, 250); doc.roundedRect(x, y, 168, 52, 6, 6, 'F');
+      doc.setFontSize(8); doc.setTextColor(110); doc.text(t[0].toUpperCase(), x + 10, y + 16);
+      doc.setFontSize(11); doc.setTextColor(30); doc.text(doc.splitTextToSize(String(t[1]), 150).slice(0, 2), x + 10, y + 32);
+    });
+    let y = 252;
+    if (c.penalty) { doc.setFontSize(9); doc.setTextColor(90); doc.text(`Pénalité de retard : ${m$(c.penalty)}. Dues : ${m$(penDue)}, réglées : ${m$(penSettled)}.`, 40, y - 10); doc.setTextColor(30); y += 12; }
+    doc.setFontSize(13); doc.text('Cotisations de chaque membre', 40, y);
+    doc.autoTable({ startY: y + 8, margin: { left: 40, right: 40 }, styles: { fontSize: 9 }, headStyles: { fillColor: navy },
+      head: [['Membre', 'Versé', 'Reste', 'Statut', 'Complète le', 'Moyen', 'Pénalité']],
+      body: rows.map(x => [x.m.name, m$(x.a), m$(x.rest), x.full ? 'Complet' : x.a > 0 ? 'Partiel' : 'Non payé', x.full && x.when ? fmtShort(x.when) : '-', x.meths || '-', x.pen ? m$(x.pen) + (x.penPaid ? ' (réglée)' : '') : '-']),
+      didParseCell: d => { if (d.section === 'body' && d.column.index === 3) { const t = d.cell.raw; d.cell.styles.textColor = t === 'Complet' ? [20, 120, 60] : t === 'Partiel' ? [190, 110, 0] : [190, 40, 40]; d.cell.styles.fontStyle = 'bold'; } } });
+    y = doc.lastAutoTable.finalY + 22;
+    // payment methods used during this round
+    const byM = new Map(); paymentRows().filter(x => x.round === r).forEach(x => { const o = byM.get(x.m) || { n: 0, sum: 0 }; o.n++; o.sum += x.a; byM.set(x.m, o); });
+    if (byM.size) {
+      if (y > 640) { doc.addPage(); y = 50; }
+      doc.setFontSize(13); doc.text('Moyens de paiement', 40, y);
+      doc.autoTable({ startY: y + 8, margin: { left: 40, right: 40 }, styles: { fontSize: 9 }, headStyles: { fillColor: navy }, head: [['Moyen', 'Versements', 'Total']], body: [...byM].map(([k, o]) => [methodName(k), o.n, m$(o.sum)]) });
+      y = doc.lastAutoTable.finalY + 22;
+    }
+    // who still owes
+    const owing = rows.filter(x => !x.full);
+    if (owing.length) { if (y > 700) { doc.addPage(); y = 50; } doc.setFontSize(11); doc.text('Reste à payer : ' + owing.map(x => x.m.name + ' (' + m$(x.rest) + ')').join(', '), 40, y, { maxWidth: W - 80 }); y += 16 + 12 * Math.floor(owing.length / 4); }
+    // signatures
+    if (y > 700) { doc.addPage(); y = 50; }
+    y = Math.max(y + 24, 710);
+    doc.setDrawColor(150); doc.setFontSize(9); doc.setTextColor(90);
+    doc.line(40, y, 230, y); doc.text('Organisateur (nom et signature)', 40, y + 12);
+    doc.line(W - 230, y, W - 40, y); doc.text('Bénéficiaire (nom et signature)', W - 230, y + 12);
+    doc.setFontSize(8); doc.text('Document généré par Elongo', W / 2, 820, { align: 'center' });
+    const slug = c.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'tontine';
+    doc.save('rapport-tour-' + (r + 1) + '-' + slug + '.pdf'); toast('Rapport du tour ' + (r + 1) + ' enregistré.');
+  }
+
   // ----- every versement of the tontine, oldest first (PDF history and CSV export) -----
   function paymentRows() {
     const rows = [];
@@ -1277,6 +1344,7 @@
       if (act === 'voice') { toggleRec(); return; }
       if (act === 'rmpending') { ui.pending = null; renderPending(); return; }
       if (act === 'exportpdf') { exportPdf(); return; }
+      if (act === 'roundpdf') { exportRoundPdf(Number(($('rpSel') || {}).value)); return; }
       if (act === 'exportcsv') { exportCsv(); return; }
       if (act === 'cancelreq') { const r = myRow(); if (r) await B.remove('members', { id: r.id }); await bootstrap(); go('#/accueil'); return; }
       const D = derive();
