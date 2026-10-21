@@ -104,6 +104,12 @@
     if (m === 'join_closed') return "Les inscriptions sont fermées pour cette tontine.";
     if (m === 'already_joined') return 'Vous êtes déjà dans cette tontine.';
     if (m === 'name_required') return 'Indiquez votre nom.';
+    if (m === 'no_account') return "Ce membre n'a pas encore de compte : il n'a pas de mot de passe à réinitialiser.";
+    if (m === 'self') return 'Pour changer votre mot de passe, ouvrez « Mon compte ».';
+    if (m === 'forbidden') return 'Seul un organisateur de la tontine peut le faire.';
+    if (m === 'not_found') return "Ce membre n'est plus dans la tontine.";
+    if (m === 'reset_unavailable') return "La réinitialisation n'est pas disponible pour le moment. Réessayez plus tard.";
+    if (/should be different from the old password|same_password/i.test(m + ' ' + (c || ''))) return "Choisissez un mot de passe différent de l'ancien.";
     if (c === '42501' || /row-level security|permission denied/i.test(m)) return "Vous n'avez pas le droit de faire cela.";
     if (c === '23505') return 'Cet élément existe déjà.';
     if (c === 'quota_exceeded') return "L'espace de stockage est plein.";
@@ -520,6 +526,8 @@
   function render() {
     const v = $('view'), a = document.activeElement;
     chrome();
+    if (!(B.user && B.user.must)) ui.forcePw = false;
+    else if (!ui.forcePw || !$('modal').open) { ui.forcePw = true; pwForm(true); }   // a reset password must be replaced before anything else
     const ready = S.loaded || ['auth', 'welcome', 'join'].includes(S.view);
     if (!ready) { v.innerHTML = '<p class="empty">Chargement…</p>'; ui.rendered = ''; return; }
     if (S.view === 'discussion') { if (ui.rendered !== 'discussion') { v.innerHTML = chatSkeleton(); ui.rendered = 'discussion'; } renderChatParts(); return; }
@@ -559,7 +567,7 @@
       <div class="seg"><button type="button" data-act="authmode" data-mode="in" aria-pressed="${!up}">Se connecter</button><button type="button" data-act="authmode" data-mode="up" aria-pressed="${up}">Créer un compte</button></div>
       <form id="authForm"><label class="f">Numéro de téléphone<input type="text" name="email" required autocomplete="tel" inputmode="tel" autocapitalize="none" spellcheck="false" placeholder="Ex. 0812345678"></label>
       <label class="f">Mot de passe${up ? ' (4 caractères minimum, à retenir)' : ''}<span class="pw"><input type="password" name="password" required minlength="4" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="eye" data-act="showpw" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-      <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form></section>`;
+      <p class="error" id="authErr" role="alert"></p><button class="primary" type="submit">${up ? 'Créer mon compte' : 'Se connecter'}</button></form>${up ? '' : '<p class="hint" style="margin-top:12px;text-align:center"><button type="button" class="mini" data-act="forgotpw">Mot de passe oublié ?</button></p>'}</section>`;
   }
   const createForm = () => `<section class="panel"><h2>Créer ma tontine</h2><form id="createForm" class="grid">
       <label class="f">Nom du groupe<input data-d="c.name" value="${esc(dv('c.name', ''))}" required maxlength="60" placeholder="Ex. Tontine des amis"></label>
@@ -950,6 +958,7 @@
       <ul class="list" style="margin-top:8px">${S.members.length ? S.members.map((m, i) => {
         const served = S.out.has(i), ov = S.out.get(i);
         return `<li class="row wrap memrow"><span class="rn num">${i + 1}</span><div class="grow name">${memberLink(m)}${m.user_id && m.user_id === c.owner_id ? ' <span class="pill ok">Organisateur principal</span>' : m.is_organizer ? ' <span class="pill ok">Organisateur</span>' : ''}${m.user_id ? '' : ' <span class="sub">(sans compte)</span>'}</div>
+          ${isAdmin() && m.user_id && m.user_id !== S.user.id ? `<button class="mini${ui.armed === 'rpw:' + m.id ? ' armed' : ''}" data-act="resetpw" data-id="${esc(m.id)}" title="Donne un mot de passe provisoire à ce membre">${ui.armed === 'rpw:' + m.id ? 'Confirmer' : '🔑 Mot de passe'}</button>` : ''}
           ${isAdmin() && m.user_id && m.user_id !== S.user.id && m.user_id !== c.owner_id ? `<button class="mini${ui.armed === 'orga:' + m.id ? ' armed' : ''}" data-act="orga" data-id="${esc(m.id)}">${ui.armed === 'orga:' + m.id ? 'Confirmer' : m.is_organizer ? "Retirer l'organisateur" : 'Nommer organisateur'}</button>` : ''}
           ${m.user_id && m.user_id === c.owner_id && m.user_id !== S.user.id ? `<button class="mini danger${ui.armed === 'rmp:' + m.id ? ' armed' : ''}" data-act="rmprincipal" data-id="${esc(m.id)}">${ui.armed === 'rmp:' + m.id ? "Confirmer : prendre sa place" : "Retirer l'organisateur principal"}</button>` : ''}
           <input class="ph" data-phone="${esc(m.id)}" value="${esc(S.contacts.get(m.id) || '')}" inputmode="tel" placeholder="Téléphone" aria-label="Téléphone de ${esc(m.name)}">
@@ -1291,6 +1300,7 @@
     const act = b.dataset.act, id = b.dataset.id;
     try {
       if (act === 'authmode') { ui.authMode = b.dataset.mode; render(); return; }
+      if (act === 'forgotpw') { forgotDialog(); return; }
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
@@ -1370,6 +1380,13 @@
         }
         await B.update('members', { status: 'active', position: S.members.reduce((x, m) => Math.max(x, m.position), 0) + 1 }, { id });
         await loadTable('members'); audit(r.name + ' accepté dans la tontine'); toast(r.name + " a été ajouté à la fin de l'ordre de passage.");
+      } else if (act === 'resetpw') {
+        const m = S.members.find(x => x.id === id); if (!m || !isAdmin() || !m.user_id || m.user_id === S.user.id) return;
+        if (ui.armed !== 'rpw:' + id) { ui.armed = 'rpw:' + id; render(); return; }
+        ui.armed = ''; render();
+        const pw = await B.resetPassword(S.tid, id);
+        audit('Mot de passe réinitialisé pour ' + m.name);
+        resetPwDialog(m, pw);
       } else if (act === 'orga') {
         const m = S.members.find(x => x.id === id); if (!m || !isAdmin() || m.user_id === S.cfg.owner_id) return;
         if (ui.armed !== 'orga:' + id) { ui.armed = 'orga:' + id; render(); return; }
@@ -1604,27 +1621,73 @@
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : t === 'dark' ? '🌙 Sombre' : '⚫ Noir'}</button>`).join('')}</div>
+      ${pwSection()}
       ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
     m.showModal();
   });
   $('modal').addEventListener('click', async ev => {
-    const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal')) $('modal').close(); return; }
+    const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal') && !ui.forcePw) $('modal').close(); return; }
     if (b.dataset.m.startsWith('theme:')) { setTheme(b.dataset.m.slice(6)); document.querySelectorAll('#modalBody [data-m^="theme:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'theme:' + getTheme()))); return; }
+    if (b.dataset.m === 'pwform') { pwForm(false); return; }
+    if (b.dataset.m === 'pwsave') { await pwAction(); return; }
+    if (b.dataset.m === 'copypw') { try { await navigator.clipboard.writeText(b.dataset.pw); toast('Mot de passe copié.'); } catch (e) { toast(b.dataset.pw); } return; }
     if (b.dataset.m === 'pinform') { pinForm(); return; }
     if (b.dataset.m === 'pinsave' || b.dataset.m === 'pindel') { await pinAction(b.dataset.m); return; }
     $('modal').close();
-    if (b.dataset.m === 'out') { await disablePush(); await B.signOut(); }
+    if (b.dataset.m === 'out') { ui.forcePw = false; await disablePush(); await B.signOut(); }
     else if (b.dataset.m === 'pushon') { try { await enablePush(); } catch (e) { toast('Impossible d\'activer les notifications sur cet appareil.'); } }
     else if (b.dataset.m === 'pushoff') { await disablePush(); await refreshPush(); toast('Notifications désactivées sur cet appareil.'); }
     else if (b.dataset.m === 'new') go('#/accueil');
     else if (b.dataset.m === 'open') { S.tid = b.dataset.id; S.cfg = S.tontines.find(t => t.id === S.tid); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine(); go('#/tour'); }
   });
+  $('modal').addEventListener('cancel', ev => { if (ui.forcePw) ev.preventDefault(); });   // the forced password change cannot be dismissed with Esc
   window.addEventListener('hashchange', () => route());
   window.addEventListener('offline', () => { $('liveDot').classList.add('off'); chrome(); toast('Hors connexion : les données ne se mettent plus à jour.'); });
   window.addEventListener('online', () => { $('liveDot').classList.remove('off'); chrome(); syncQueue().then(() => { if (S.tid) queue('*'); }); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncQueue(); if (S.tid && S.loaded) queue('*'); } });
   setInterval(() => { if (!document.hidden && S.tid && S.loaded && navigator.onLine !== false) { syncQueue(); queue('*'); } }, 60000);
+
+  // ---------- Password ----------
+  // Accounts have no e-mail, so a forgotten password is reset by an organizer (Edge Function « account »): he reads a temporary
+  // password to the member, who must choose a new one at the next sign-in (B.user.must, set by the reset).
+  function forgotDialog() {
+    $('modalBody').innerHTML = `<h2>Mot de passe oublié ?</h2>
+      <p class="hint">Elongo n'a pas votre adresse e-mail : aucun lien ne peut vous être envoyé.</p>
+      <ol class="small"><li>Demandez à l'organisateur de votre tontine de vous réinitialiser : dans <b>Organisateur</b>, il appuie sur <b>🔑 Mot de passe</b> en face de votre nom.</li>
+      <li>Il vous donne un mot de passe provisoire (par WhatsApp ou de vive voix).</li>
+      <li>Connectez-vous avec votre numéro et ce mot de passe : l'appli vous demandera d'en choisir un nouveau.</li></ol>
+      <p class="hint">Vous êtes le seul organisateur ? Contactez l'administrateur de l'application.</p>
+      <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
+    if (!$('modal').open) $('modal').showModal();
+  }
+  function resetPwDialog(m, pw) {
+    const c = S.cfg, link = location.href.split('#')[0], text = `Bonjour ${m.name}, voici votre mot de passe provisoire pour Elongo : ${pw}\nConnectez-vous avec votre numéro de téléphone, puis choisissez un nouveau mot de passe.\n${link}`;
+    ui.dlgFn = null;
+    $('modalBody').innerHTML = `<h2>Mot de passe de ${esc(m.name)}</h2><p class="sub">Mot de passe provisoire</p>
+      <p class="tempcode num" style="font-size:2rem;letter-spacing:.12em;text-align:center;margin:12px 0">${esc(pw)}</p>
+      <p class="hint">Donnez-le à ${esc(m.name)}. Il ne sera plus affiché. À sa prochaine connexion, ${esc(m.name)} devra choisir un nouveau mot de passe ; l'ancien ne marche plus.</p>
+      <div class="dlg-actions"><a class="lnk" target="_blank" rel="noopener noreferrer" href="${esc(waLink(waPhone(c, S.contacts.get(m.id)), text))}">Envoyer par WhatsApp</a><button data-m="copypw" data-pw="${esc(pw)}">Copier</button><button class="primary" data-m="close">Terminé</button></div>`;
+    if (!$('modal').open) $('modal').showModal();
+  }
+  const pwSection = () => `<h3 style="margin-top:12px">Mot de passe</h3><p><button class="mini" data-m="pwform">Changer mon mot de passe</button></p>`;
+  function pwForm(forced) {
+    const f = (id, label) => `<label class="f">${label}<input id="${id}" type="password" autocomplete="new-password" minlength="4"></label>`;
+    ui.dlgFn = null;
+    $('modalBody').innerHTML = `<h2>${forced ? 'Choisissez votre mot de passe' : 'Changer mon mot de passe'}</h2>
+      <p class="sub">${forced ? 'Votre mot de passe a été réinitialisé par un organisateur. Choisissez-en un nouveau, que vous retiendrez.' : '4 caractères minimum.'}</p>
+      ${f('pwNew', 'Nouveau mot de passe')}${f('pwNew2', 'Confirmer le mot de passe')}
+      <p class="lock-err" id="pwErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" data-m="pwsave">Enregistrer</button>${forced ? '<button class="danger" data-m="out">Se déconnecter</button>' : '<button data-m="close">Annuler</button>'}</div>`;
+    if (!$('modal').open) $('modal').showModal();
+  }
+  async function pwAction() {
+    const err = t => { $('pwErr').textContent = t; }, a = $('pwNew').value;
+    if (a.length < 4) return err('Le mot de passe doit avoir au moins 4 caractères.');
+    if (a !== $('pwNew2').value) return err('Les deux mots de passe ne sont pas identiques.');
+    try { await B.updatePassword(authPw(a)); } catch (e) { return err(friendly(e)); }
+    ui.forcePw = false; $('modal').close(); toast('Mot de passe enregistré.');
+  }
 
   // ---------- Unlock code ----------
   // Optional screen lock: each member can set a 4-6 digit code on this device. Only a salted hash is kept, in localStorage.

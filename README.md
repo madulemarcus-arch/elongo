@@ -82,6 +82,20 @@ Les relances individuelles des retardataires restent des liens WhatsApp (bouton 
 
 `npm run test:push` teste la logique de la fonction (droits, textes, rappels, nettoyage des appareils périmés) et un vrai envoi chiffré avec la bibliothèque web-push. Ce test n'exécute pas la fonction sur Supabase : l'envoi réel se vérifie avec deux téléphones.
 
+## Mot de passe oublié
+
+Les comptes se créent avec un numéro de téléphone : personne n'a de boîte e-mail, donc aucun lien de réinitialisation ne peut être envoyé. Un **organisateur** réinitialise le mot de passe d'un membre :
+
+1. Organisateur → Membres et ordre de passage → **🔑 Mot de passe** en face du nom (deux clics pour confirmer).
+2. L'appli affiche un **mot de passe provisoire** (8 caractères), à donner au membre par WhatsApp (bouton prévu) ou de vive voix. Il ne sera plus affiché ; l'action est inscrite au journal.
+3. Le membre se connecte avec son numéro et ce mot de passe : l'appli lui demande **aussitôt d'en choisir un nouveau**. L'ancien mot de passe ne marche plus.
+
+Sur l'écran de connexion, « Mot de passe oublié ? » explique ces étapes. Chacun peut aussi changer son mot de passe dans **Mon compte → Changer mon mot de passe**.
+
+Mise en place (une fois) : Supabase → **Edge Functions → Deploy a new function → Via Editor**, nom **`account`**, collez `supabase/functions/account/index.ts`, laissez « Verify JWT » activé, puis Deploy. Aucun secret à ajouter (`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont fournis par Supabase). `npm run test:account` teste les droits de la fonction.
+
+Si le seul organisateur oublie son mot de passe, l'administrateur de l'application le change dans Supabase → Authentication → Users.
+
 ## Droits
 
 | | Organisateur | Membre actif | Demandeur |
