@@ -81,6 +81,7 @@ await A.fill(d$('c.days'), '30');
 assert.ok((await A.textContent('#prev-c')).includes(`au ${short(plusDays(daysAgo(9), 30))}`), 'the end date follows the number of days');
 await A.fill(d$('c.days'), '7');
 await A.fill(d$('c.me'), 'Marcus');
+assert.ok((await A.textContent('#orgRule')).includes('autre organisateur'), 'the creation form explains who resets an organizer\'s password');
 await shot(A, '02-creation');
 await A.click('#createForm button.primary');
 await A.waitForSelector('text=Espace organisateur');
@@ -324,9 +325,11 @@ step('unlock code: set, lock on open, wrong code, unlock, remove');
 // ---------- Co-organizer ----------
 await A.click('.tabbar a[data-tab=organisateur]');
 assert.equal(await Bp.isVisible('.tabbar a[data-tab=organisateur]'), false, 'a plain member has no organizer tab');
+await A.waitForSelector('#orgAlone');   // the only organizer is warned to name a second one
 await A.click('li:has-text("Chantal") [data-act=orga]');
 await A.click('li:has-text("Chantal") [data-act=orga]:has-text("Confirmer")');
 await A.waitForSelector('li:has-text("Chantal") .pill:has-text("Organisateur")');
+assert.equal(await A.locator('#orgAlone').count(), 0, 'no warning once there are two organizers');
 await Bp.waitForSelector('.tabbar a[data-tab=organisateur]', { state: 'visible' });
 await Bp.click('.tabbar a[data-tab=organisateur]');
 await Bp.waitForSelector('h2:has-text("Espace organisateur")');
