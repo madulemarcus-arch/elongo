@@ -1657,7 +1657,7 @@
       <ol class="small"><li>Demandez à l'organisateur de votre tontine de vous réinitialiser : dans <b>Organisateur</b>, il appuie sur <b>🔑 Mot de passe</b> en face de votre nom.</li>
       <li>Il vous donne un mot de passe provisoire (par WhatsApp ou de vive voix).</li>
       <li>Connectez-vous avec votre numéro et ce mot de passe : l'appli vous demandera d'en choisir un nouveau.</li></ol>
-      <p class="hint">Vous êtes le seul organisateur ? Contactez l'administrateur de l'application.</p>
+      <p class="hint">Vous êtes vous-même organisateur ? Un autre organisateur de la tontine vous réinitialise de la même façon. S'il n'y en a pas d'autre, contactez l'administrateur de l'application.</p>
       <div class="dlg-actions"><button data-m="close">Fermer</button></div>`;
     if (!$('modal').open) $('modal').showModal();
   }

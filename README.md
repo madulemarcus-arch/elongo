@@ -94,7 +94,7 @@ Sur l'écran de connexion, « Mot de passe oublié ? » explique ces étapes. Ch
 
 Mise en place (une fois) : Supabase → **Edge Functions → Deploy a new function → Via Editor**, nom **`account`**, collez `supabase/functions/account/index.ts`, laissez « Verify JWT » activé, puis Deploy. Aucun secret à ajouter (`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont fournis par Supabase). `npm run test:account` teste les droits de la fonction.
 
-Si le seul organisateur oublie son mot de passe, l'administrateur de l'application le change dans Supabase → Authentication → Users.
+Un organisateur qui oublie son mot de passe se fait réinitialiser par un **autre organisateur**, de la même façon. S'il est le seul organisateur, l'administrateur de l'application le change dans Supabase → Authentication → Users.
 
 ## Droits
 
