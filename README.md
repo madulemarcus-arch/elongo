@@ -92,7 +92,7 @@ Les comptes se créent avec un numéro de téléphone : personne n'a de boîte e
 
 Sur l'écran de connexion, « Mot de passe oublié ? » explique ces étapes. Chacun peut aussi changer son mot de passe dans **Mon compte → Changer mon mot de passe**.
 
-Mise en place (une fois) : Supabase → **Edge Functions → Deploy a new function → Via Editor**, nom **`account`**, collez `supabase/functions/account/index.ts`, laissez « Verify JWT » activé, puis Deploy. Aucun secret à ajouter (`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont fournis par Supabase). `npm run test:account` teste les droits de la fonction.
+Mise en place (une fois) : Supabase → **Edge Functions → Deploy a new function → Via Editor**, nom **`account`**, collez `supabase/functions/account/index.ts`, puis Deploy. « Verify JWT » peut rester désactivé : la fonction vérifie elle-même le jeton de l'organisateur (et refuse tout appel sans jeton valide). Aucun secret à ajouter (`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont fournis par Supabase). `npm run test:account` teste les droits de la fonction.
 
 Un organisateur qui oublie son mot de passe se fait réinitialiser par un **autre organisateur**, de la même façon. S'il est le seul organisateur, l'administrateur de l'application le change dans Supabase → Authentication → Users.
 
