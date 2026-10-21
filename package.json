@@ -9,7 +9,8 @@
     "test": "node tests/e2e.mjs",
     "test:sql": "sh tests/rls.sh",
     "test:push": "node tests/push.mjs",
-    "icons": "node tests/icons.mjs"
+    "icons": "node tests/icons.mjs",
+    "test:account": "node tests/account.mjs"
   },
   "devDependencies": {
     "http_ece": "^1.2.1",

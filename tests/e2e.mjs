@@ -666,6 +666,55 @@ await A.click('#authForm button.primary');
 await A.waitForSelector('a[data-tab=organisateur]');
 step('sign-out / wrong password / sign-in');
 
+// Forgotten password: an organizer gives Chantal a temporary one, she must replace it
+await tab(A, 'organisateur');
+const rpw = 'li.memrow:has-text("Chantal") [data-act=resetpw]';
+assert.equal(await A.locator('li.memrow:has-text("Marcus") [data-act=resetpw]').count(), 0, 'nobody resets their own password from the member list');
+await A.click(rpw);
+assert.equal((await A.textContent(rpw)).trim(), 'Confirmer', 'resetting needs a second click');
+await A.click(rpw);
+await A.waitForSelector('#modal[open] .tempcode');
+const temp = (await A.textContent('.tempcode')).trim();
+assert.match(temp, /^[a-z2-9]{8}$/);
+assert.ok(await A.locator('#modalBody a:has-text("WhatsApp")').count(), 'the temporary password can be sent on WhatsApp');
+await shot(A, '09-mot-de-passe-provisoire');
+await A.click('#modalBody [data-m=close]');
+await Bp.click('#userChip'); await Bp.click('[data-m=out]'); await Bp.waitForSelector('#authForm');
+await Bp.click('[data-act=forgotpw]');
+await Bp.waitForSelector('#modal[open] h2:has-text("Mot de passe oublié")');
+assert.ok((await Bp.textContent('#modalBody')).includes('organisateur'), 'the forgotten-password help points to the organizer');
+await Bp.click('#modalBody [data-m=close]');
+await Bp.fill('#authForm input[name=email]', '0991 11 22 22');
+await Bp.fill('#authForm input[name=password]', 'secret456');
+await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('#authErr:has-text("incorrect")');   // the old password no longer works
+await Bp.fill('#authForm input[name=password]', temp);
+await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('#modal[open] #pwNew');
+await shot(Bp, '09b-nouveau-mot-de-passe');
+await Bp.keyboard.press('Escape');
+assert.ok(await Bp.evaluate(() => document.getElementById('modal').open), 'the forced change cannot be dismissed');
+await Bp.fill('#pwNew', 'nouveau789'); await Bp.fill('#pwNew2', 'nouveau788'); await Bp.click('[data-m=pwsave]');
+await Bp.waitForSelector('#pwErr:has-text("identiques")');
+await Bp.fill('#pwNew', 'ab'); await Bp.fill('#pwNew2', 'ab'); await Bp.click('[data-m=pwsave]');
+await Bp.waitForSelector('#pwErr:has-text("4 caractères")');
+await Bp.fill('#pwNew', 'nouveau789'); await Bp.fill('#pwNew2', 'nouveau789'); await Bp.click('[data-m=pwsave]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+await Bp.click('#userChip'); await Bp.click('[data-m=out]'); await Bp.waitForSelector('#authForm');
+await Bp.fill('#authForm input[name=email]', '0991 11 22 22');
+await Bp.fill('#authForm input[name=password]', temp);
+await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('#authErr:has-text("incorrect")');   // the temporary password is spent
+await Bp.fill('#authForm input[name=password]', 'nouveau789');
+await Bp.click('#authForm button.primary');
+await Bp.waitForSelector('a[data-tab=tour]');
+assert.equal(await Bp.locator('#modal[open] #pwNew').count(), 0, 'no forced change once the new password is set');
+// A member can change the password on their own from « Mon compte »
+await Bp.click('#userChip'); await Bp.click('[data-m=pwform]');
+await Bp.fill('#pwNew', 'secret456'); await Bp.fill('#pwNew2', 'secret456'); await Bp.click('[data-m=pwsave]');
+await Bp.waitForFunction(() => !document.getElementById('modal').open);
+step('forgotten password: organizer reset, forced change, own change');
+
 // A round paid in full before its end date is ticked from that day until the planned end
 await A.evaluate(day => {
   const k = 'lisanga.demo.v1', d = JSON.parse(localStorage.getItem(k)), t = d.tontines[0];

@@ -1,7 +1,7 @@
 // Data layer. Two interchangeable backends expose the same small API to app.js:
 //   - Supabase (production): accounts, Postgres tables protected by RLS, Realtime, Storage. Used when config.js is filled in.
 //   - Demo (no server): same tables in localStorage, shared between tabs through BroadcastChannel. For trying the app out and for tests/e2e.mjs.
-// API: init, user, onAuthChange, signUp, signIn, signOut, select, insert, update, upsert, remove, rpc, subscribe, putFile, getFile, removeFiles.
+// API: init, user, onAuthChange, signUp, signIn, signOut, updatePassword, resetPassword, select, insert, update, upsert, remove, rpc, subscribe, putFile, getFile, removeFiles.
 // Rows keep the snake_case column names of supabase/schema.sql.
 (function () {
   const cfg = window.LISANGA_CONFIG || {};
@@ -13,7 +13,7 @@
     const B = { mode: 'supabase', maxFile: 5 * 1024 * 1024, maxVideo: 20 * 1024 * 1024, user: null };
     const listeners = new Set();
     const unwrap = ({ data, error }) => { if (error) throw error; return data; };
-    const setUser = s => { B.user = s && s.user ? { id: s.user.id, email: s.user.email } : null; };
+    const setUser = s => { B.user = s && s.user ? { id: s.user.id, email: s.user.email, must: !!(s.user.user_metadata && s.user.user_metadata.must_change) } : null; };
     const fire = () => listeners.forEach(f => f(B.user));
     B.init = async () => {
       let session = null;
@@ -35,6 +35,14 @@
     };
     B.signIn = async (email, password) => { unwrap(await sb.auth.signInWithPassword({ email, password })); };
     B.signOut = async () => { await sb.auth.signOut(); };
+    // Own password (Mon compte, or the forced change after a reset): also clears the "must change" flag set by the reset.
+    B.updatePassword = async password => { unwrap(await sb.auth.updateUser({ password, data: { must_change: false } })); if (B.user) B.user.must = false; };
+    // An organizer resets a member's password: the Edge Function « account » returns a temporary one (the member has no e-mail to receive a link).
+    B.resetPassword = async (tontineId, memberId) => {
+      const r = await sb.functions.invoke('account', { body: { kind: 'resetpw', tontine_id: tontineId, member_id: memberId } });
+      if (r.error) { let code = ''; try { code = (await r.error.context.json()).error; } catch (e) { /* no body: function missing or unreachable */ } throw Object.assign(new Error(code || 'reset_unavailable'), { code }); }
+      return r.data.password;
+    };
     const filtered = (q, eq) => { for (const [k, v] of Object.entries(eq || {})) q = q.eq(k, v); return q; };
     B.select = async (table, { eq, order, limit } = {}) => {
       let q = filtered(sb.from(table).select('*'), eq);
@@ -145,7 +153,7 @@
     };
     B.onAuthChange = f => { listeners.add(f); };
     const setUser = u => {
-      B.user = u ? { id: u.id, email: u.email } : null;
+      B.user = u ? { id: u.id, email: u.email, must: !!u.must_change } : null;
       try { if (u) sessionStorage.setItem('lisanga.demo.user', JSON.stringify(B.user)); else sessionStorage.removeItem('lisanga.demo.user'); } catch (e) {}
       listeners.forEach(f => f(B.user));
     };
@@ -159,6 +167,20 @@
       if (!u) throw err('Invalid login credentials'); setUser(u);
     };
     B.signOut = async () => setUser(null);
+    B.updatePassword = async password => {
+      const uid = must(), d = load(), u = d.users.find(x => x.id === uid); u.password = password; delete u.must_change; save(d); B.user.must = false;
+      try { sessionStorage.setItem('lisanga.demo.user', JSON.stringify(B.user)); } catch (e) {}
+    };
+    // Same rules as supabase/functions/account: organizer of the tontine, member of it with an account, not oneself.
+    B.resetPassword = async (tontineId, memberId) => {
+      const uid = must(), d = load(), t = T(d, 'tontines').find(x => x.id === tontineId), m = T(d, 'members').find(x => x.id === memberId);
+      if (!t || !isOwner(d, t.id)) throw err('forbidden', 'forbidden');
+      if (!m || m.tontine_id !== t.id) throw err('not_found', 'not_found');
+      if (!m.user_id) throw err('no_account', 'no_account');
+      if (m.user_id === uid) throw err('self', 'self');
+      const a = 'abcdefghjkmnpqrstuvwxyz23456789', b = crypto.getRandomValues(new Uint8Array(8)), pw = [...b].map(x => a[x % a.length]).join('');
+      const u = d.users.find(x => x.id === m.user_id); u.password = pw; u.must_change = true; save(d); return pw;
+    };
     B.select = async (t, { eq, order, limit } = {}) => {
       const d = load(); let rows = T(d, t).filter(r => match(r, eq) && visible(d, t, r));
       (order || []).slice().reverse().forEach(([c, asc]) => { rows = rows.slice().sort((a, b) => (a[c] > b[c] ? 1 : a[c] < b[c] ? -1 : 0) * (asc === false ? -1 : 1)); });
