@@ -117,6 +117,8 @@ Mise en place (une fois, à chaque mise à jour du schéma) : relancer `supabase
 
 La carte du tour (onglets Accueil et Tour) est animée : un **ciel** discret derrière (points qui dérivent, étoiles dorées qui scintillent, une planète sur son orbite), un **anneau** qui montre combien de membres ont tout versé (« 3/4 ont payé ») et des **chiffres qui montent** jusqu'à leur valeur. Tout s'arrête automatiquement si le téléphone demande de réduire les animations, et se met en pause quand l'écran n'est pas visible.
 
+Les **listes et cartes** s'affichent l'une après l'autre, chaque membre a sa **couleur** (avatar en dégradé, la vôtre cerclée d'or), les barres de progression se remplissent, le **total encaissé** monte comme un compteur et un **squelette** qui scintille remplace le mot « Chargement… ». La police **Inter** est embarquée (`fonts/`, licence incluse) : même rendu sur tous les téléphones, chiffres alignés, et disponible hors connexion.
+
 L'**en-tête** a des lueurs dorées, un filet doré et des boutons en verre ; le **menu du bas** est en verre, ses icônes sont à deux tons (contour + détail doré qui se dessine à l'ouverture de l'onglet) et une pastille glisse d'un onglet à l'autre.
 
 ## Droits

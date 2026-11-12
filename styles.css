@@ -1,3 +1,4 @@
+@font-face { font-family: 'Inter'; src: url('fonts/inter-latin.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 /* Elongo : bleu nuit et or. Les couleurs sont des variables ; le bandeau du haut et la carte du tour gardent le bleu nuit en mode clair comme en mode sombre. */
 :root {
   color-scheme: light;
@@ -8,8 +9,8 @@
   --hero-a: #13255b; --hero-b: #0b1640; --hero-ink: #ffffff;
   --radius: 18px;
   --shadow: 0 1px 2px rgba(14, 26, 58, .05), 0 10px 28px rgba(14, 26, 58, .07);
-  --display: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  --body: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --display: 'Inter', system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --body: 'Inter', system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -79,7 +80,7 @@ main > * { min-width: 0; }
 select, input, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 select:focus-visible, input:focus-visible, button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--coin); outline-offset: 2px; }
 button { font: inherit; font-weight: 600; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 16px; cursor: pointer; }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 4px 12px rgba(19, 37, 91, .22); }
+button.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, #5e7dff)); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 4px 12px rgba(19, 37, 91, .22), inset 0 1px 0 rgba(255, 255, 255, .16); }
 button.danger { color: var(--warn); border-color: var(--warn); }
 button.armed { background: var(--warn); color: #fff; border-color: var(--warn); }
 button:disabled { opacity: .5; cursor: default; }
@@ -131,7 +132,7 @@ ul.list { list-style: none; margin: 0; padding: 0; display: grid; }
 .row.wrap { flex-wrap: wrap; }
 .row .grow { flex: 1; min-width: 0; }
 .row .name { font-weight: 700; overflow-wrap: anywhere; }
-.av { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--tint); color: var(--accent); display: grid; place-items: center; font-weight: 800; font-family: var(--display); }
+.av { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--tint); transition: transform .2s; color: var(--accent); display: grid; place-items: center; font-weight: 800; font-family: var(--display); }
 .row.is-me .av { background: var(--coin); color: var(--coin-ink); }
 .pill { flex: none; font-size: .76rem; font-weight: 700; border-radius: 99px; padding: 3px 11px; background: var(--tint); color: var(--accent); white-space: nowrap; }
 .pill.ok { background: rgba(23, 121, 75, .12); color: var(--ok); }
@@ -145,7 +146,7 @@ ul.list { list-style: none; margin: 0; padding: 0; display: grid; }
 .chead { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .chead h2 { margin: 0; }
 .mbar { height: 7px; border-radius: 99px; background: var(--tint); overflow: hidden; margin: 7px 0; }
-.mbar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.mbar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transform-origin: left; }
 .mbar.full i { background: var(--ok); }
 .versrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 input.vin { width: 7rem; padding: 5px 9px; font-size: .88rem; border-radius: 10px; }
@@ -486,4 +487,29 @@ button.callme:active { transform: scale(.98); }
 @media (prefers-reduced-motion: reduce) {
   .brand img, .tabbar a.on .tt, .badge { animation: none !important; }
   .tabbar.go::before { transition: none; }
+}
+
+/* Step 3: lists and cards come alive. Rows and tiles rise one after the other when a screen opens, bars grow, each person has a colour. */
+.num, td, th { font-variant-numeric: tabular-nums; }
+#view.enter ul.list > li, #view.enter .kpis > .kpi { animation: rise .42s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(120ms + min(var(--k, 0), 10) * 45ms); }
+#view.enter ul.list > li:nth-child(2), #view.enter .kpis > .kpi:nth-child(2) { --k: 1; }
+#view.enter ul.list > li:nth-child(3), #view.enter .kpis > .kpi:nth-child(3) { --k: 2; }
+#view.enter ul.list > li:nth-child(4), #view.enter .kpis > .kpi:nth-child(4) { --k: 3; }
+#view.enter ul.list > li:nth-child(5) { --k: 4; } #view.enter ul.list > li:nth-child(6) { --k: 5; } #view.enter ul.list > li:nth-child(7) { --k: 6; }
+#view.enter ul.list > li:nth-child(8) { --k: 7; } #view.enter ul.list > li:nth-child(9) { --k: 8; } #view.enter ul.list > li:nth-child(n+10) { --k: 9; }
+#view.enter .mbar i { animation: growx .8s .25s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes growx { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.av[style*="--h"] { background: linear-gradient(135deg, hsl(var(--h) 62% 52%), hsl(calc(var(--h) + 28) 62% 40%)); color: #fff; box-shadow: 0 2px 6px hsl(var(--h) 60% 30% / .3); }
+.row.is-me .av[style*="--h"] { box-shadow: 0 0 0 2.5px var(--coin), 0 2px 8px rgba(244, 183, 63, .5); }
+.crow:hover .av { transform: scale(1.06); }
+.kpi { transition: transform .15s, box-shadow .15s; }
+.kpi:hover { transform: translateY(-2px); }
+/* loading: a few shimmering blocks instead of a bare word */
+.skel { display: grid; gap: 14px; }
+.skel i { display: block; height: 96px; border-radius: var(--radius); background: linear-gradient(100deg, var(--tint) 30%, color-mix(in srgb, var(--tint) 55%, var(--surface)) 50%, var(--tint) 70%) 0 0 / 220% 100%; animation: shimmer 1.4s linear infinite; }
+.skel i:first-child { height: 190px; border-radius: 24px; } .skel i:last-child { height: 140px; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #view.enter ul.list > li, #view.enter .kpis > .kpi, #view.enter .mbar i, .skel i { animation: none !important; }
+  .kpi, .av { transition: none; } .kpi:hover { transform: none; } .crow:hover .av { transform: none; }
 }
