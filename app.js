@@ -638,6 +638,10 @@
     const tabs = signed && S.tid && TABS.includes(S.view);
     $('tabbar').hidden = !tabs;
     document.querySelectorAll('.tabbar a').forEach(a => { a.classList.toggle('on', a.dataset.tab === S.view); a.hidden = a.dataset.role === 'orga' && !isAdmin(); });
+    const tb = $('tabbar'), shown = [...tb.querySelectorAll('a')].filter(a => !a.hidden), at = shown.findIndex(a => a.classList.contains('on'));
+    tb.style.setProperty('--n', shown.length || 1); tb.style.setProperty('--i', Math.max(0, at)); tb.classList.toggle('has', at >= 0);
+    shown.forEach((a, i) => { if (i === at) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    if (!tb.classList.contains('go')) requestAnimationFrame(() => tb.classList.add('go'));   // the pill only slides once it has been placed
     $('liveDot').hidden = !(signed && S.tid);
     if (signed) { const m = myRow(); $('userChip').textContent = (m ? m.name : shownId(S.user.email)); }
     $('reqBadge').textContent = S.pending.length; $('reqBadge').hidden = !(isAdmin() && S.pending.length);

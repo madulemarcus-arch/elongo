@@ -445,6 +445,9 @@ t = await text(A);
 assert.ok(!t.includes('En retard'));
 await shot(A, '06-tour2');
 assert.equal(await A.locator('.hero canvas.sky').count(), 1, 'the animated sky sits behind the hero card');
+const nav = await A.evaluate(() => { const tb = document.getElementById('tabbar'); return { i: tb.style.getPropertyValue('--i'), n: tb.style.getPropertyValue('--n'), cur: document.querySelector('.tabbar a[aria-current]').dataset.tab, tt: document.querySelectorAll('.tabbar .tt').length }; });
+assert.deepEqual([nav.i, nav.n, nav.cur], ['1', '6', 'tour'], 'the sliding pill sits on the active tab (index 1 of 6 for an organizer)');
+assert.ok(nav.tt >= 10, 'tab icons have a gold detail');
 assert.match((await A.textContent('.hero .ring b')).trim(), /^\d\/4$/, 'the ring counts the members who paid in full');
 assert.ok((await A.textContent('.hero [data-ck=pot]')).replace(/\s/g, '').includes('40000'), 'the pot amount shows its final value');
 
