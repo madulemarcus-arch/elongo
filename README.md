@@ -100,6 +100,19 @@ Un organisateur qui oublie son mot de passe se fait réinitialiser par un **autr
 
 Dans l'onglet **Tour**, un organisateur voit le bouton **+ Ajouter un tour** sous le titre. Chaque tour est celui d'un membre : le bouton ouvre une fenêtre qui annonce le numéro et les dates du nouveau tour, demande le **nom** (et le téléphone, facultatif) de la personne qui recevra la cagnotte, et l'ajoute **à la fin de l'ordre de passage**. L'action est inscrite au journal. C'est le même ajout que « Ajouter » dans l'onglet Organisateur, sans changer d'écran ; il marche aussi quand le cycle est terminé.
 
+## Nouveau cycle
+
+Un cycle, c'est quand chaque membre a reçu la cagnotte une fois. Quand le dernier est servi, l'onglet **Tour** affiche « Le cycle est terminé » et, pour les organisateurs, le bouton **+ Nouveau cycle**. Il ouvre une fenêtre qui permet de définir le cycle suivant en quelques secondes :
+
+- **Début du premier tour** : par défaut la fin du cycle précédent (ou aujourd'hui s'il est plus tard).
+- **Suggestions d'ordre** : *Même ordre*, *Les derniers d'abord* (ceux qui ont attendu le plus longtemps passent en premier), *Décalé d'un cran* (chacun avance d'un tour, le premier passe en dernier) et *🎲 Tirage au sort*.
+- **On commence par / On finit par** : choisissez qui ouvre et qui ferme le cycle, les autres gardent l'ordre de la suggestion ; les flèches ↑ ↓ ajustent à la main.
+- **Aperçu** : une frise des tours avec le numéro, le nom et les dates de chacun, le premier et le dernier en évidence, et la date de fin du cycle.
+
+« Lancer le cycle » enregistre tout d'un coup (ordre, date de début, numéro du cycle) ; l'écran des autres téléphones suit en direct. L'en-tête de l'onglet Tour affiche « cycle 2 ». Les versements et remises du cycle terminé **restent en base** mais n'apparaissent plus dans les écrans, les exports PDF/Excel et le calendrier, qui montrent le cycle en cours. Un cycle ne peut être lancé que lorsque tous les membres actifs ont reçu la cagnotte.
+
+Mise en place (une fois, à chaque mise à jour du schéma) : relancer `supabase/schema.sql` dans Supabase > SQL Editor (il ajoute `cycle` et `cycle_base` à la tontine et la fonction `new_cycle`), et recoller `supabase/functions/push/index.ts` dans la fonction push (les rappels et notifications comptent les tours à partir du début du cycle).
+
 ## Droits
 
 | | Organisateur | Membre actif | Demandeur |

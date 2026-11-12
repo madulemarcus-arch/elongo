@@ -925,6 +925,63 @@ await tab(A, 'tour');
 await A.waitForFunction(() => document.getElementById('view').textContent.includes('4 tours au total'));
 step('+ Ajouter un tour from the Tour tab');
 
+// ---------- New cycle: when everybody has been served, an organizer sets the start date and the order of the next cycle ----------
+await A.evaluate(() => {   // the other rounds were served: the cycle is over
+  const k = 'lisanga.demo.v1', d = JSON.parse(localStorage.getItem(k)), t = d.tontines[0];
+  const ms = d.members.filter(m => m.tontine_id === t.id && m.status === 'active').sort((a, b) => a.position - b.position);
+  ms.forEach((m, i) => { if (!d.payouts.some(p => p.tontine_id === t.id && p.round === i)) d.payouts.push({ tontine_id: t.id, round: i, member_id: m.id, amount: t.amount * ms.length, paid_on: '2026-11-01' }); });
+  localStorage.setItem(k, JSON.stringify(d));
+});
+await A.reload(); await Bp.reload();
+await A.waitForSelector('a[data-tab=tour]'); await tab(A, 'tour');
+await A.waitForSelector('text=Le cycle est terminé');
+await Bp.waitForSelector('a[data-tab=tour]'); await tab(Bp, 'tour');
+await Bp.waitForSelector('text=Le cycle est terminé');
+assert.equal(await Bp.locator('[data-act=newcycle]').count(), 0, 'only an organizer can start a new cycle');  
+await A.click('[data-act=newcycle]');
+await A.waitForSelector('#modal[open] .nctl');
+assert.equal(await A.locator('.nctl li').count(), 4, 'the preview lists every tour');
+const names = async () => A.locator('.nctl li .name').evaluateAll(l => l.map(e => e.firstChild.textContent.trim()));
+const same = await names();
+await A.click('[data-m="ncmode:reverse"]');
+assert.deepEqual(await names(), same.slice().reverse(), 'suggestion: the last ones first');
+await A.click('[data-m="ncmode:shift"]');
+assert.deepEqual(await names(), same.slice(1).concat(same[0]), 'suggestion: everybody moves up one turn');
+await A.click('[data-m="ncmode:same"]');
+const pickLast = same[0];   // the first of the old cycle finishes the new one
+await A.selectOption('#ncLast', { label: pickLast });
+let order = await names();
+assert.equal(order[order.length - 1], pickLast, 'chosen last member is last');
+assert.deepEqual(order.slice(0, 3), same.slice(1), 'the others keep their order');
+await A.selectOption('#ncFirst', { label: same[2] });
+order = await names();
+assert.equal(order[0], same[2], 'chosen first member is first'); assert.equal(order[order.length - 1], pickLast);
+await A.click(`.nctl li:nth-child(2) [data-m^=ncdn]`);   // manual move
+const manual = await names(); assert.equal(manual[0], same[2]);
+const start = plusDays(daysAgo(0), 3);
+await A.fill('#ncStart', start);
+await A.dispatchEvent('#ncStart', 'change');
+assert.ok((await A.textContent('.nctl li:first-child .sub')).includes(String(Number(start.slice(8)))), 'dates follow the chosen start');
+await shot(A, '11-nouveau-cycle');
+await A.click('[data-m=nclaunch]');
+await A.waitForSelector('.toast.show:has-text("Cycle 2 lancé")');
+await A.waitForSelector('text=Tour 1 sur 4');
+assert.ok((await A.textContent('#view header')).includes('cycle 2'), 'the header shows the cycle number');
+assert.ok((await A.textContent('main')).includes(manual[0]), 'the first of the new order receives the first pot');
+assert.equal(await A.locator('text=En retard').count(), 0, 'no late payment: the new cycle starts clean');
+await A.waitForFunction(() => !document.getElementById('view').textContent.includes('Le cycle est terminé'));
+// the other phone follows live
+await Bp.waitForFunction(() => document.getElementById('view').textContent.includes('cycle 2'), null, { timeout: 8000 });
+await Bp.waitForSelector('text=Tour 1 sur 4');
+// the history of cycle 1 stays in the data, behind the base
+const kept = await A.evaluate(() => { const d = JSON.parse(localStorage.getItem('lisanga.demo.v1')), t = d.tontines[0]; return { base: t.cycle_base, cycle: t.cycle, payouts: d.payouts.filter(p => p.tontine_id === t.id).length }; });
+assert.deepEqual(kept, { base: 4, cycle: 2, payouts: 4 });
+// payments of the new cycle start at database round 4 and are shown as tour 1
+await tab(A, 'tour'); await openPay(manual[0] === 'Marcus' ? 'Alice' : 'Marcus');
+await A.fill('#modalBody input.vin', '10000'); await A.click('#modalBody [data-act=vers]');
+await A.waitForFunction(() => { const d = JSON.parse(localStorage.getItem('lisanga.demo.v1')); return d.payments.some(p => p.round === 4); });
+step('new cycle: start date, order suggestions, first/last, live on the other phone, history kept');
+
 // ---------- Administrators: every organizer has the principal's rights, including removing the principal ----------
 await A.goto(url + '#/organisateur');
 await A.waitForSelector('li:has-text("Chantal") [data-act=orga]');

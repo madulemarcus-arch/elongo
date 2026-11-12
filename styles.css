@@ -437,3 +437,18 @@ button.callme:active { transform: scale(.98); }
 @keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 157, 92, .55); } 50% { box-shadow: 0 0 0 16px rgba(31, 157, 92, 0); } }
 .callbtn.ok { animation: ringpulse 1.6s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .callbtn.ok { animation: none; } }
+
+/* New cycle: suggestions and a timeline of the turns */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: .88rem; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.nctl { list-style: none; margin: 14px 0 6px; padding: 0 0 0 4px; position: relative; max-height: 46vh; overflow: auto; }
+.nctl li { display: flex; align-items: center; gap: 12px; padding: 8px 0; position: relative; animation: ncin .35s both; animation-delay: calc(var(--i) * 40ms); }
+.nctl li::before { content: ''; position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.nctl li:first-child::before { top: 50%; } .nctl li:last-child::before { bottom: 50%; }
+.nctl .dot { position: relative; z-index: 1; flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--tint); color: var(--accent); font-weight: 800; font-size: .9rem; }
+.nctl li.first .dot { background: var(--coin); color: var(--coin-ink); }
+.nctl li.last .dot { background: var(--accent); color: var(--accent-ink); }
+.nctl .mv { display: flex; gap: 4px; flex: none; }
+@keyframes ncin { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nctl li { animation: none; } }
