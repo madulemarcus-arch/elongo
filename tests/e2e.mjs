@@ -904,6 +904,27 @@ await Bp.waitForSelector('#toast.show:has-text("refusé")');
 await Bp.waitForSelector('#callBox', { state: 'hidden' });
 step('voice call: ring, answer, talk, mute, hang up, refuse');
 
+// "+ Ajouter un tour": an organizer adds the next tour (= the member who will receive it) from the Tour tab
+await tab(A, 'tour');
+await A.waitForSelector('[data-act=addtour]');
+assert.ok((await A.textContent('#view header')).includes('4 tours au total'));
+await A.click('[data-act=addtour]');
+await A.waitForSelector('#modal[open] #addTourForm');
+assert.ok((await A.textContent('#modalBody')).includes('Tour 5'), 'the dialog announces the new tour number and its dates');
+await shot(A, '10-ajouter-un-tour');
+await A.fill('#atName', 'Eve'); await A.fill('#atPhone', '0812340000');
+await A.click('#addTourForm button.primary');
+await A.waitForSelector('.toast.show:has-text("Tour 5 ajouté pour Eve")');
+await A.waitForFunction(() => document.getElementById('view').textContent.includes('5 tours au total'));
+await tab(A, 'organisateur');
+await A.waitForSelector('li.memrow:has-text("Eve")');
+assert.ok((await A.textContent('li.memrow:has-text("Eve")')).includes('5'), 'Eve is last in the order of turns');
+await A.click('li:has-text("Eve") [data-act=rm]'); await A.click('li:has-text("Eve") [data-act=rm]:has-text("Confirmer")');
+await A.waitForSelector('li.memrow:has-text("Eve")', { state: 'detached' });
+await tab(A, 'tour');
+await A.waitForFunction(() => document.getElementById('view').textContent.includes('4 tours au total'));
+step('+ Ajouter un tour from the Tour tab');
+
 // ---------- Administrators: every organizer has the principal's rights, including removing the principal ----------
 await A.goto(url + '#/organisateur');
 await A.waitForSelector('li:has-text("Chantal") [data-act=orga]');

@@ -611,7 +611,7 @@
     const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
       ? `<div class="remind compact" title="Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée."><span>🔔 <b>Alertes sur ce téléphone</b></span><span class="versrow"><button class="mini primary" data-act="pushon">Activer</button><button class="mini" data-act="pushlater">Plus tard</button></span></div>` : '';
     const hi = (chatName() || '').split(' ')[0], header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
-      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
+      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p>${isAdmin() ? '<p style="margin-top:10px"><button type="button" class="mini primary" data-act="addtour">+ Ajouter un tour</button></p>' : ''}</header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
     if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? undoBtn(D, '') : ''}</section>`;
     const due = roundDate(c, D.cur), late = dayDiff(due, todayISO()) < 0, pot = c.amount * D.n, got = D.got, pct = Math.min(100, Math.round(100 * got / pot)), miss = D.n - D.paidIds.size;
@@ -657,6 +657,21 @@
   }
   // Changing who receives the pot: swap two members who are not served yet, or send one to the end of the order.
   const turnDates = (c, r) => 'du ' + fmtShort(roundStart(c, r)) + ' au ' + fmtShort(roundEnd(c, r));
+  // A tour is the turn of one member: every member receives the pot once. Adding a tour = adding the member who will receive the next one.
+  function addTourDialog() {
+    if (!isAdmin() || !S.cfg) return;
+    const c = S.cfg, n = S.members.length;
+    ui.dlgFn = null;
+    $('modalBody').innerHTML = `<h2>Ajouter un tour</h2>
+      <p class="sub">Tour ${n + 1} : du ${esc(fmtShort(roundStart(c, n)))} au ${esc(fmtDate(roundEnd(c, n)))}</p>
+      <p class="hint">Chaque tour est celui d'un membre. Indiquez la personne qui recevra la cagnotte à ce tour : elle rejoint la tontine à la fin de l'ordre de passage.</p>
+      <form id="addTourForm" class="grid"><label class="f">Nom du membre<input id="atName" maxlength="40" required autocomplete="off" placeholder="Ex. Alice"></label>
+      <label class="f">Téléphone (facultatif)<input id="atPhone" inputmode="tel" autocomplete="off" placeholder="Pour les rappels WhatsApp"></label>
+      <p class="error" id="atErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" type="submit">Ajouter le tour ${n + 1}</button><button type="button" data-m="close">Annuler</button></div></form>`;
+    if (!$('modal').open) $('modal').showModal();
+    $('atName').focus();
+  }
   function swapDialog(r) {
     const c = S.cfg, D = derive(), m = S.members[r];
     if (!c || !m || r < D.cur || S.out.has(r)) return;
@@ -1304,6 +1319,7 @@
     try {
       if (act === 'authmode') { ui.authMode = b.dataset.mode; render(); return; }
       if (act === 'forgotpw') { forgotDialog(); return; }
+      if (act === 'addtour') { addTourDialog(); return; }
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
@@ -1566,6 +1582,16 @@
         if (phone) await B.upsert('contacts', { member_id: m.id, tontine_id: S.tid, phone: phone.slice(0, 30) }, 'member_id');
         clearDraft('a.'); await Promise.all([loadTable('members'), loadTable('contacts')]); render();
         const n = $('addForm') && $('addForm').querySelector('input'); if (n) n.focus();
+      } else if (f.id === 'addTourForm') {
+        const name = $('atName').value.trim(), phone = $('atPhone').value.trim(); if (!name || !isAdmin()) return;
+        const n = S.members.length, btn = f.querySelector('button.primary'); if (btn.disabled) return; btn.disabled = true;
+        try {
+          const [m] = await B.insert('members', { tontine_id: S.tid, name, position: S.members.reduce((x, k) => Math.max(x, k.position), 0) + 1, status: 'active' });
+          if (phone) await B.upsert('contacts', { member_id: m.id, tontine_id: S.tid, phone: phone.slice(0, 30) }, 'member_id');
+          await Promise.all([loadTable('members'), loadTable('contacts')]);
+          audit('Tour ' + (n + 1) + ' ajouté : ' + name);
+          $('modal').close(); render(); toast('Tour ' + (n + 1) + ' ajouté pour ' + name + '.');
+        } catch (e) { $('atErr').textContent = friendly(e); btn.disabled = false; }
       } else if (f.id === 'cfgForm') {
         const v = fv(f), g = k => v['s.' + k], c = S.cfg;
         const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join') };

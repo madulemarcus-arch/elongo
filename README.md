@@ -96,6 +96,10 @@ Mise en place (une fois) : Supabase → **Edge Functions → Deploy a new functi
 
 Un organisateur qui oublie son mot de passe se fait réinitialiser par un **autre organisateur**, de la même façon. S'il est le seul organisateur, l'administrateur de l'application le change dans Supabase → Authentication → Users.
 
+## Ajouter un tour
+
+Dans l'onglet **Tour**, un organisateur voit le bouton **+ Ajouter un tour** sous le titre. Chaque tour est celui d'un membre : le bouton ouvre une fenêtre qui annonce le numéro et les dates du nouveau tour, demande le **nom** (et le téléphone, facultatif) de la personne qui recevra la cagnotte, et l'ajoute **à la fin de l'ordre de passage**. L'action est inscrite au journal. C'est le même ajout que « Ajouter » dans l'onglet Organisateur, sans changer d'écran ; il marche aussi quand le cycle est terminé.
+
 ## Droits
 
 | | Organisateur | Membre actif | Demandeur |
