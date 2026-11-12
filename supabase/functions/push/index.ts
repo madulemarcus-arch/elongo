@@ -50,7 +50,7 @@ export async function handle(req: Request, deps: any): Promise<Response> {
     if (body.kind === 'payment' || body.kind === 'payout') {
       const t = await deps.getTontine(body.tontine_id);
       if (!t || !(await deps.isOrganizer(t, uid))) return json({ error: 'forbidden' }, 403);   // only an organizer records payments
-      const round = Number(body.round);
+      const round = Number(body.round), base = Number(t.cycle_base || 0);   // round = number in the database; screens count from the start of the cycle
       const cur = t.currency;
       let text = '', member: any = null;
       if (body.kind === 'payment') {
@@ -59,13 +59,13 @@ export async function handle(req: Request, deps: any): Promise<Response> {
         if (!p || !member || member.tontine_id !== t.id) return json({ sent: 0, failed: 0, removed: 0 });
         const amount = Number(p.amount);
         text = amount >= Number(t.amount)
-          ? `${member.name} a payé toute sa cotisation (tour ${round + 1}).`
-          : `${member.name} a versé ${fmt(amount)} ${cur} sur ${fmt(Number(t.amount))} ${cur} (tour ${round + 1}).`;
+          ? `${member.name} a payé toute sa cotisation (tour ${round - base + 1}).`
+          : `${member.name} a versé ${fmt(amount)} ${cur} sur ${fmt(Number(t.amount))} ${cur} (tour ${round - base + 1}).`;
       } else {
         const o = await deps.getPayout(t.id, round);
         member = o && await deps.getMember(o.member_id);
         if (!o || !member || member.tontine_id !== t.id) return json({ sent: 0, failed: 0, removed: 0 });
-        text = `${member.name} a reçu la cagnotte de ${fmt(Number(o.amount))} ${cur} (tour ${round + 1}).`;
+        text = `${member.name} a reçu la cagnotte de ${fmt(Number(o.amount))} ${cur} (tour ${round - base + 1}).`;
       }
       const to = await deps.audience(t.id); to.delete(uid);
       return json(await deliver(deps, { title: t.name, body: text, url: './#/direct', tag: `${body.kind}-${t.id}-${round}-${body.member_id || ''}` }, to));
@@ -79,7 +79,7 @@ export async function handle(req: Request, deps: any): Promise<Response> {
       if (recent) return json({ error: 'too_soon' }, 429);
       const members = await deps.activeMembers(t.id);
       const served = new Set(await deps.payoutRounds(t.id));
-      let cur = 0; while (served.has(cur)) cur++;
+      const base = Number(t.cycle_base || 0); let cur = 0; while (served.has(base + cur)) cur++;   // cur = round of the current cycle
       if (!members.length || cur >= members.length) return json({ owing: 0, notified: 0, sent: 0, failed: 0, removed: 0, unreachable: [] });
       return json(await remindRound(deps, t, cur, dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), deps.today()), members));
     }
@@ -131,7 +131,7 @@ async function deliver(deps: any, payload: unknown, userIds: Set<string>) {
 // Reminder for every member who still owes the current round. Returns who was reached and who could not be (no account, no device).
 async function remindRound(deps: any, t: any, cur: number, days: number, members: any[]) {
   const out = { owing: 0, notified: 0, sent: 0, failed: 0, removed: 0, unreachable: [] as string[] };
-  const paid: Map<string, number> = await deps.paymentsOfRound(t.id, cur);
+  const paid: Map<string, number> = await deps.paymentsOfRound(t.id, Number(t.cycle_base || 0) + cur);
   const price = Number(t.amount);
   for (const m of members) {
     const rest = price - Number(paid.get(m.id) || 0);
@@ -157,7 +157,7 @@ async function reminders(deps: any) {
     const members = await deps.activeMembers(t.id);
     if (!members.length) continue;
     const served = new Set(await deps.payoutRounds(t.id));
-    let cur = 0; while (served.has(cur)) cur++;
+    const base = Number(t.cycle_base || 0); let cur = 0; while (served.has(base + cur)) cur++;
     if (cur >= members.length) continue;
     const days = dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), today);   // a round of N days ends N days after it starts
     if (days > Number(t.reminder_days)) continue;

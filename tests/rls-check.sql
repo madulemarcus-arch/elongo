@@ -231,3 +231,43 @@ select pg_temp.check('le co-organisateur est devenu le principal', (select owner
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select pg_temp.zero('l''ancien principal n''a plus accès', $$select count(*)::int from tontines where name = 'Tontine deux'$$);
 select pg_temp.zero('l''ancien principal ne modifie plus rien', $$with u as (update tontines set name = 'pris' where name = 'Tontine deux' returning 1) select count(*)::int from u$$);
+
+-- ---------- new cycle: atomic, organizers only, only once everybody has received the pot ----------
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+insert into tontines (name, amount, start_date) values ('Tontine cycle', 1000, '2026-01-01');
+reset role;
+select set_config('app.t3', (select id::text from tontines where name = 'Tontine cycle'), false) as t3 \gset
+insert into members (id, tontine_id, name, position) values
+  ('00000000-0000-0000-0000-0000000000a1', current_setting('app.t3')::uuid, 'Un', 1),
+  ('00000000-0000-0000-0000-0000000000a2', current_setting('app.t3')::uuid, 'Deux', 2),
+  ('00000000-0000-0000-0000-0000000000a3', current_setting('app.t3')::uuid, 'Trois', 3);
+select pg_temp.check('cycle: colonnes par défaut', (select cycle || '/' || cycle_base from tontines where id = current_setting('app.t3')::uuid) = '1/0');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.fails('cycle: pas terminé', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
+insert into payouts (tontine_id, round, member_id, amount, paid_on) values
+  (current_setting('app.t3')::uuid, 0, '00000000-0000-0000-0000-0000000000a1', 3000, '2026-01-08'),
+  (current_setting('app.t3')::uuid, 1, '00000000-0000-0000-0000-0000000000a2', 3000, '2026-01-15'),
+  (current_setting('app.t3')::uuid, 2, '00000000-0000-0000-0000-0000000000a3', 3000, '2026-01-22');
+select pg_temp.fails('cycle: ordre incomplet', format('select new_cycle(%L, %L, array[%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2'));
+select pg_temp.fails('cycle: membre en double', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a3'));
+select pg_temp.fails('cycle: membre d''une autre tontine', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', gen_random_uuid()));
+select pg_temp.fails('cycle: début obligatoire', format('select new_cycle(%L, null, array[%L,%L,%L]::uuid[])', current_setting('app.t3'),
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+select pg_temp.fails('cycle: un intrus', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+select pg_temp.check('cycle: lancé par l''organisateur', new_cycle(current_setting('app.t3')::uuid, '2026-06-01',
+  array['00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2']::uuid[]) = 2);
+select pg_temp.check('cycle: numéro, base et début', (select cycle || '/' || cycle_base || '/' || start_date from tontines where id = current_setting('app.t3')::uuid) = '2/3/2026-06-01');
+select pg_temp.check('cycle: nouvel ordre de passage', (select string_agg(name, ',' order by position) from members where tontine_id = current_setting('app.t3')::uuid) = 'Trois,Un,Deux');
+select pg_temp.check('cycle: l''historique reste', (select count(*) from payouts where tontine_id = current_setting('app.t3')::uuid) = 3);
+select pg_temp.fails('cycle: déjà relancé (aucune remise dans le nouveau cycle)', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-09-01',
+  '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
+reset role;
+select pg_temp.check('cycle: fermé à anon', not has_function_privilege('anon', 'public.new_cycle(uuid,date,uuid[])', 'execute'));

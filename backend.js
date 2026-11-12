@@ -116,7 +116,7 @@
     const now = () => new Date().toISOString();
     // New row = column defaults of schema.sql, overridden by the given values.
     const finish = (t, row) => {
-      const base = t === 'tontines' ? { id: uuid(), owner_id: must(), currency: 'FC', interval_days: 30, penalty: 0, reminder_days: 3, country_code: '243', join_open: true, code: Math.random().toString(36).slice(2, 10), created_at: now() }
+      const base = t === 'tontines' ? { id: uuid(), owner_id: must(), currency: 'FC', interval_days: 30, cycle: 1, cycle_base: 0, penalty: 0, reminder_days: 3, country_code: '243', join_open: true, code: Math.random().toString(36).slice(2, 10), created_at: now() }
         : t === 'members' ? { id: uuid(), position: 0, status: 'active', user_id: null, is_organizer: false, created_at: now() }
         : t === 'topics' ? { id: uuid(), author_id: must(), created_at: now(), closed: false }
         : t === 'messages' ? { id: uuid(), author_id: must(), created_at: now(), topic_id: null, body: '', att: null }
@@ -234,6 +234,19 @@
       return { ok: () => true, send: p => ch.postMessage(p), leave: () => ch.close() };
     };
     B.rpc = async (name, a) => {
+      if (name === 'new_cycle') {   // same rules as public.new_cycle of supabase/schema.sql
+        must(); const d = load(), t = T(d, 'tontines').find(x => x.id === a.p_tontine);
+        if (!t || !isOwner(d, t.id)) throw err('forbidden');
+        if (!a.p_start) throw err('start_required');
+        const act = T(d, 'members').filter(m => m.tontine_id === t.id && m.status === 'active'), base = t.cycle_base || 0;
+        const served = T(d, 'payouts').filter(p => p.tontine_id === t.id && p.round >= base).length, ord = a.p_order || [];
+        if (!act.length || served < act.length) throw err('cycle_not_finished');
+        if (ord.length !== act.length || new Set(ord).size !== act.length || ord.some(id => !act.some(m => m.id === id))) throw err('bad_order');
+        const top = x => T(d, x).filter(r => r.tontine_id === t.id).reduce((n, r) => Math.max(n, r.round + 1), 0);
+        t.cycle = (t.cycle || 1) + 1; t.cycle_base = Math.max(base, top('payouts'), top('payments')); t.start_date = a.p_start;
+        ord.forEach((id, i) => { T(d, 'members').find(m => m.id === id).position = i + 1; });
+        save(d); notify('tontines', t.id); notify('members', t.id); return t.cycle;
+      }
       const uid = must(), d = load(), code = String(a.p_code || '').trim().toLowerCase(), t = T(d, 'tontines').find(x => x.code === code);
       if (name === 'tontine_preview') return t ? [{ name: t.name, join_open: t.join_open }] : [];
       if (name === 'join_tontine') {

@@ -157,6 +157,23 @@ await call({ kind: 'reminders' }, { cron: 's3cret' });
 assert.match(state.sent[0].body, /\(tour 2\)\.$/);
 step('reminders');
 
+// ---------- second cycle: round numbers in the database continue after the first cycle (cycle_base), screens count from 1 again ----------
+reset(); T.cycle_base = 3; T.start_date = '2026-11-01'; state.today = '2026-11-05';   // cycle 2, tour 1 = 1 to 8 Nov (database round 3)
+state.payouts.push({ round: 0, member_id: 'm0', amount: 30000 }, { round: 1, member_id: 'm1', amount: 30000 }, { round: 2, member_id: 'm2', amount: 30000 });
+state.payments.push({ round: 3, member_id: 'm0', amount: 10000 }, { round: 3, member_id: 'm1', amount: 4000 });
+r = await j(await call({ kind: 'reminders' }, { cron: 's3cret' }));
+assert.equal(r.status, 200);
+assert.equal(state.sent.find(s => s.endpoint === 'e-alice').body, 'Cotisation attendue dans 3 jours : 6 000 FC à verser (tour 1).', 'the first round of cycle 2 is tour 1, with its own payments');
+assert.equal(state.sent.find(s => s.endpoint === 'e-bob').body, 'Cotisation attendue dans 3 jours : 10 000 FC à verser (tour 1).');
+state.sent = []; state.payments.push({ round: 3, member_id: 'm2', amount: 10000 });
+r = await j(await call({ kind: 'payment', tontine_id: 't1', round: 3, member_id: 'm2' }, { token: 'tok-owner' }));
+assert.equal(state.sent[0].body, 'Bob a payé toute sa cotisation (tour 1).', 'announcements use the number of the round in the cycle');
+state.sent = []; state.payouts.push({ round: 3, member_id: 'm0', amount: 40000 });
+await call({ kind: 'payout', tontine_id: 't1', round: 3 }, { token: 'tok-owner' });
+assert.match(state.sent[0].body, /\(tour 1\)\.$/);
+delete T.cycle_base; T.start_date = '2026-10-03';
+step('second cycle numbering');
+
 // ---------- manual reminder by an organizer ----------
 reset(); state.today = '2026-10-05';   // well before the end of round 1: a manual reminder does not wait for the notice period
 state.payments.push({ round: 0, member_id: 'm0', amount: 10000 }, { round: 0, member_id: 'm1', amount: 4000 });

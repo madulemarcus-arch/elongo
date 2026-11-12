@@ -104,6 +104,9 @@
     if (m === 'join_closed') return "Les inscriptions sont fermées pour cette tontine.";
     if (m === 'already_joined') return 'Vous êtes déjà dans cette tontine.';
     if (m === 'name_required') return 'Indiquez votre nom.';
+    if (m === 'cycle_not_finished') return "Le cycle n'est pas terminé : tous les membres n'ont pas encore reçu la cagnotte.";
+    if (m === 'bad_order') return "L'ordre ne correspond pas aux membres actifs de la tontine. Fermez la fenêtre et recommencez.";
+    if (m === 'start_required') return 'Choisissez la date de début du cycle.';
     if (m === 'no_account') return "Ce membre n'a pas encore de compte : il n'a pas de mot de passe à réinitialiser.";
     if (m === 'self') return 'Pour changer votre mot de passe, ouvrez « Mon compte ».';
     if (m === 'forbidden') return 'Seul un organisateur de la tontine peut le faire.';
@@ -186,6 +189,10 @@
   function getQueue() { try { const v = JSON.parse(store.get(qKey())); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
   function setQueue(q) { store.set(qKey(), JSON.stringify(q)); chrome(); }
   const pendingOps = () => getQueue().filter(o => o.tid === S.tid);
+  // Cycles: the rounds of a new cycle keep counting after the previous one (tontines.cycle_base rounds are behind us). The screens work
+  // with the round of the current cycle (0, 1, 2…): S.pay and S.out hold it, and every write adds the base back.
+  const rbOf = tid => { const t = S.tontines.find(x => x.id === tid); return (t && t.cycle_base) || 0; };
+  const rb = () => rbOf(S.tid);
   // Shows queued versements as if they were already recorded (marked `pending`) on top of the data received from the server.
   function overlayPending() {
     const c = S.cfg; if (!c) return;
@@ -198,15 +205,15 @@
   }
   // Writes one versement on the server, on top of the row as it is there now. Returns { add, total }, 'full' or 'done'.
   async function commitVersement(op) {
-    const rows = await B.select('payments', { eq: { tontine_id: op.tid, round: op.round, member_id: op.member_id } });
+    const rows = await B.select('payments', { eq: { tontine_id: op.tid, round: op.round + rbOf(op.tid), member_id: op.member_id } });
     const rec = rows[0] ? Object.assign({}, rows[0], { amount: Number(rows[0].amount) }) : null, log = (rec && rec.log) || [];
     if (log.some(x => x.id === op.id)) return 'done';   // an earlier attempt already wrote it
     const have = rec ? rec.amount : 0, add = Math.min(op.a, op.due - have);
     if (add <= 0) return 'full';
     const total = have + add;
-    await B.upsert('payments', { tontine_id: op.tid, round: op.round, member_id: op.member_id, amount: total, paid_on: op.at, done_on: total >= op.due ? op.at : null,
+    await B.upsert('payments', { tontine_id: op.tid, round: op.round + rbOf(op.tid), member_id: op.member_id, amount: total, paid_on: op.at, done_on: total >= op.due ? op.at : null,
       log: log.slice(-19).concat([{ a: add, at: op.at, m: op.m, by: op.by, ts: op.ts, id: op.id }]), penalty_paid: !!(rec && rec.penalty_paid) }, 'tontine_id,round,member_id');
-    notify({ kind: 'payment', tontine_id: op.tid, round: op.round, member_id: op.member_id });
+    notify({ kind: 'payment', tontine_id: op.tid, round: op.round + rbOf(op.tid), member_id: op.member_id });
     return { add, total };
   }
   async function auditFor(tid, by, text) {
@@ -245,7 +252,8 @@
   async function loadTable(name) {
     const tid = S.tid; if (!tid) return;
     const eq = { tontine_id: tid };
-    if (name === 'tontines') { await loadTontines(); if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast("Vous n'avez plus accès à cette tontine (supprimée, ou vous en avez été retiré)."); await afterTontineGone(); } } return; }
+    if (name === 'tontines') { const before = rbOf(tid); await loadTontines(); if (tid === S.tid && rbOf(tid) !== before) await Promise.all([loadTable('members'), loadTable('payments'), loadTable('payouts')]);   // a new cycle was started elsewhere
+      if (tid === S.tid) { S.cfg = S.tontines.find(t => t.id === tid) || null; if (!S.cfg) { toast("Vous n'avez plus accès à cette tontine (supprimée, ou vous en avez été retiré)."); await afterTontineGone(); } } return; }
     if (name === 'contacts' && !isAdmin()) return;
     if (name === 'reactions') { try { const rr = await selectCached('reactions', tid, { eq }); if (rr && tid === S.tid) S.reactions = rr; } catch (e) { S.reactions = []; } return; }   // silent when the table does not exist yet
     if (name === 'journal') { try { const jr = await selectCached('journal', tid, { eq, order: [['created_at', false]], limit: 100 }); if (jr) S.journal = jr.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) })); } catch (e) { S.journal = []; } return; }
@@ -254,11 +262,13 @@
     if (name === 'members') { S.allMembers = rows; S.members = rows.filter(m => m.status === 'active'); S.pending = rows.filter(m => m.status === 'pending'); }
     else if (name === 'contacts') S.contacts = new Map(rows.map(r => [r.member_id, r.phone]));
     else if (name === 'payments') {
-      const next = new Map(rows.map(r => [r.round + '_' + r.member_id, Object.assign({}, r, { amount: Number(r.amount) })]));
+      const base = rbOf(tid);   // earlier cycles stay in the database but are not part of the screens
+      const next = new Map(rows.filter(r => r.round >= base).map(r => [(r.round - base) + '_' + r.member_id, Object.assign({}, r, { round: r.round - base, amount: Number(r.amount) })]));
       if (S.loaded && !isAdmin()) next.forEach((v, k) => { const o = S.pay.get(k), n = nameOf(v.member_id); if (n && (!o || o.amount !== v.amount)) toast(v.amount >= S.cfg.amount ? n + ' a payé toute sa cotisation.' : n + ' a versé ' + money(v.amount) + ' sur ' + money(S.cfg.amount) + '.'); });
       S.pay = next; overlayPending();
     } else if (name === 'payouts') {
-      const next = new Map(rows.map(r => [r.round, Object.assign({}, r, { amount: Number(r.amount) })]));
+      const base = rbOf(tid);
+      const next = new Map(rows.filter(r => r.round >= base).map(r => [r.round - base, Object.assign({}, r, { round: r.round - base, amount: Number(r.amount) })]));
       if (S.loaded && !isAdmin()) next.forEach((v, k) => { if (!S.out.has(k) && nameOf(v.member_id)) toast(nameOf(v.member_id) + ' a reçu la cagnotte.'); });
       S.out = next;
     } else if (name === 'journal') S.journal = rows.map(r => Object.assign({}, r, { ts: Date.parse(r.created_at) }));
@@ -611,9 +621,9 @@
     const pushBanner = ui.push.supported && !ui.push.subscribed && ui.push.permission !== 'denied' && !store.get('lisanga.pushlater')
       ? `<div class="remind compact" title="Soyez prévenu des versements, des remises de cagnotte et des messages, même appli fermée."><span>🔔 <b>Alertes sur ce téléphone</b></span><span class="versrow"><button class="mini primary" data-act="pushon">Activer</button><button class="mini" data-act="pushlater">Plus tard</button></span></div>` : '';
     const hi = (chatName() || '').split(' ')[0], header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
-      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total.</p></header>` + pushBanner;
+      <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}, ${D.n} tour${D.n > 1 ? 's' : ''} au total${(c.cycle || 1) > 1 ? ' · cycle ' + c.cycle : ''}.</p>${isAdmin() ? '<p style="margin-top:10px"><button type="button" class="mini primary" data-act="addtour">+ Ajouter un tour</button></p>' : ''}</header>` + pushBanner;
     if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
-    if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() && D.cur > 0 ? undoBtn(D, '') : ''}</section>`;
+    if (D.cur >= D.n) return header + `<section class="panel empty"><h2>Le cycle est terminé</h2><p>Les ${D.n} membres ont tous reçu la cagnotte.</p>${isAdmin() ? '<p><button type="button" class="primary" data-act="newcycle">+ Nouveau cycle</button></p>' : ''}${isAdmin() && D.cur > 0 ? undoBtn(D, '') : ''}</section>`;
     const due = roundDate(c, D.cur), late = dayDiff(due, todayISO()) < 0, pot = c.amount * D.n, got = D.got, pct = Math.min(100, Math.round(100 * got / pot)), miss = D.n - D.paidIds.size;
     const me = myRow(), mi = me ? S.members.findIndex(m => m.id === me.id) : -1;
     let mine = '', remind = '';
@@ -657,6 +667,82 @@
   }
   // Changing who receives the pot: swap two members who are not served yet, or send one to the end of the order.
   const turnDates = (c, r) => 'du ' + fmtShort(roundStart(c, r)) + ' au ' + fmtShort(roundEnd(c, r));
+  // ---------- New cycle ----------
+  // When every member has received the pot, an organizer starts the next cycle: the start date and the order of the turns (who is
+  // first, who is last, suggestions for the rest). The server call (new_cycle) changes the order, the start date and the round base at once.
+  const NC_MODES = [['same', 'Même ordre'], ['reverse', 'Les derniers d\'abord'], ['shift', 'Décalé d\'un cran'], ['draw', '🎲 Tirage au sort']];
+  function ncBase(mode) {
+    const ids = S.members.map(m => m.id);
+    if (mode === 'reverse') return ids.slice().reverse();                    // those who waited longest are served first
+    if (mode === 'shift') return ids.slice(1).concat(ids.slice(0, 1));      // everybody moves up one turn, the first goes last
+    if (mode === 'draw') { const r = new Uint32Array(ids.length); crypto.getRandomValues(r); return ids.map((id, i) => [r[i], id]).sort((a, b) => a[0] - b[0]).map(x => x[1]); }
+    return ids;
+  }
+  // puts the chosen first and last members where they were asked to be, the others keep their relative order
+  function ncApply() {
+    const nc = ui.nc; let o = nc.order.slice();
+    if (nc.pinLast && o.includes(nc.pinLast)) o = o.filter(x => x !== nc.pinLast).concat(nc.pinLast);
+    if (nc.pinFirst && o.includes(nc.pinFirst) && nc.pinFirst !== nc.pinLast) o = [nc.pinFirst].concat(o.filter(x => x !== nc.pinFirst));
+    nc.order = o;
+  }
+  function newCycleDialog() {
+    const c = S.cfg; if (!isAdmin() || !c || !S.members.length) return;
+    const end = roundEnd(c, S.members.length - 1), today = todayISO();
+    ui.nc = { mode: 'same', pinFirst: '', pinLast: '', order: ncBase('same'), start: end > today ? end : today };
+    ui.dlgFn = null; ncRender();
+    if (!$('modal').open) $('modal').showModal();
+  }
+  function ncRender() {
+    const nc = ui.nc, c = S.cfg, n = nc.order.length, cc = Object.assign({}, c, { start_date: nc.start }), first = nc.order[0], last = nc.order[n - 1];
+    const opts = sel => nc.order.length ? S.members.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(m.name)}</option>`).join('') : '';
+    $('modalBody').innerHTML = `<h2>Nouveau cycle</h2>
+      <p class="sub">Cycle ${(c.cycle || 1) + 1} · ${n} tours · cagnotte de ${money(c.amount * n)} par tour</p>
+      <label class="f">Début du premier tour<input id="ncStart" type="date" value="${esc(nc.start)}" required></label>
+      <h3 style="margin-top:14px">Ordre des tours</h3>
+      <div class="chips" role="group" aria-label="Suggestions d'ordre">${NC_MODES.map(([k, l]) => `<button type="button" class="chip" data-m="ncmode:${k}" aria-pressed="${nc.mode === k}">${l}</button>`).join('')}</div>
+      <div class="grid" style="margin-top:10px"><label class="f">On commence par<select id="ncFirst">${opts(first)}</select></label>
+      <label class="f">On finit par<select id="ncLast">${opts(last)}</select></label></div>
+      <ol class="nctl" aria-label="Aperçu du cycle">${nc.order.map((id, i) => `<li class="${i === 0 ? 'first' : i === n - 1 ? 'last' : ''}" style="--i:${i}"><span class="dot num">${i + 1}</span>
+        <div class="grow"><div class="name">${esc(nameOf(id))}${i === 0 ? ' <span class="pill now">Premier</span>' : i === n - 1 ? ' <span class="pill done">Dernier</span>' : ''}</div>
+        <div class="sub">${esc(fmtShort(roundStart(cc, i)))} → ${esc(fmtShort(roundEnd(cc, i)))}</div></div>
+        <span class="mv"><button type="button" class="mini" data-m="ncup:${esc(id)}" aria-label="Monter ${esc(nameOf(id))}"${i === 0 ? ' disabled' : ''}>↑</button><button type="button" class="mini" data-m="ncdn:${esc(id)}" aria-label="Descendre ${esc(nameOf(id))}"${i === n - 1 ? ' disabled' : ''}>↓</button></span></li>`).join('')}</ol>
+      <p class="hint">Le cycle dure jusqu'au ${esc(fmtDate(roundEnd(cc, n - 1)))}. L'historique du cycle précédent est conservé.</p>
+      <p class="error" id="ncErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" data-m="nclaunch">Lancer le cycle ${(c.cycle || 1) + 1}</button><button type="button" data-m="close">Annuler</button></div>`;
+  }
+  async function ncAction(m) {
+    const nc = ui.nc; if (!nc) return;
+    if (m.startsWith('ncmode:')) { nc.mode = m.slice(7); nc.order = ncBase(nc.mode); ncApply(); ncRender(); return; }
+    if (m.startsWith('ncup:') || m.startsWith('ncdn:')) {
+      const id = m.slice(5), i = nc.order.indexOf(id), j = m.startsWith('ncup:') ? i - 1 : i + 1; if (i < 0 || j < 0 || j >= nc.order.length) return;
+      [nc.order[i], nc.order[j]] = [nc.order[j], nc.order[i]]; nc.pinFirst = nc.pinLast = ''; nc.mode = 'manual'; ncRender(); return;
+    }
+    if (m !== 'nclaunch' || !isAdmin()) return;
+    const btn = $('modalBody').querySelector('[data-m=nclaunch]'); if (btn.disabled) return; btn.disabled = true;
+    const cycle = (S.cfg.cycle || 1) + 1;
+    try { await B.rpc('new_cycle', { p_tontine: S.tid, p_start: nc.start, p_order: nc.order }); }
+    catch (e) { $('ncErr').textContent = friendly(e); btn.disabled = false; return; }
+    const first = nameOf(nc.order[0]), last = nameOf(nc.order[nc.order.length - 1]), start = nc.start;
+    await loadTable('tontines');   // also reloads members, payments and payouts: the base changed
+    audit('Cycle ' + cycle + ' lancé : ' + first + ' en premier, ' + last + ' en dernier, début le ' + fmtDate(start));
+    ui.nc = null; $('modal').close(); render(); celebrate(); toast('Cycle ' + cycle + ' lancé : ' + first + ' ouvre le bal.');
+  }
+
+  // A tour is the turn of one member: every member receives the pot once. Adding a tour = adding the member who will receive the next one.
+  function addTourDialog() {
+    if (!isAdmin() || !S.cfg) return;
+    const c = S.cfg, n = S.members.length;
+    ui.dlgFn = null;
+    $('modalBody').innerHTML = `<h2>Ajouter un tour</h2>
+      <p class="sub">Tour ${n + 1} : du ${esc(fmtShort(roundStart(c, n)))} au ${esc(fmtDate(roundEnd(c, n)))}</p>
+      <p class="hint">Chaque tour est celui d'un membre. Indiquez la personne qui recevra la cagnotte à ce tour : elle rejoint la tontine à la fin de l'ordre de passage.</p>
+      <form id="addTourForm" class="grid"><label class="f">Nom du membre<input id="atName" maxlength="40" required autocomplete="off" placeholder="Ex. Alice"></label>
+      <label class="f">Téléphone (facultatif)<input id="atPhone" inputmode="tel" autocomplete="off" placeholder="Pour les rappels WhatsApp"></label>
+      <p class="error" id="atErr" role="alert"></p>
+      <div class="dlg-actions"><button class="primary" type="submit">Ajouter le tour ${n + 1}</button><button type="button" data-m="close">Annuler</button></div></form>`;
+    if (!$('modal').open) $('modal').showModal();
+    $('atName').focus();
+  }
   function swapDialog(r) {
     const c = S.cfg, D = derive(), m = S.members[r];
     if (!c || !m || r < D.cur || S.out.has(r)) return;
@@ -723,7 +809,7 @@
     if (gone && gone.pending) { setQueue(getQueue().filter(x => x.id !== gone.id)); await loadTable('payments'); toast('Versement en attente supprimé.'); return; }
     const real = full.filter((x, k) => k !== idx && !x.pending), pendingSum = full.filter(x => x.pending).reduce((t, x) => t + Number(x.a), 0);
     const removed = gone ? Number(gone.a) : Number(rec.amount) - pendingSum, base = Number(rec.amount) - pendingSum, amount = Math.max(0, base - removed);
-    const eq = { tontine_id: S.tid, round, member_id: mid };
+    const eq = { tontine_id: S.tid, round: round + rb(), member_id: mid };
     if (!real.length && !rec.penalty_paid) await B.remove('payments', eq);
     else await B.upsert('payments', Object.assign({}, eq, { amount, paid_on: real.length ? real[real.length - 1].at : rec.paid_on, done_on: amount >= c.amount ? (real.length ? real[real.length - 1].at : rec.done_on) : null, log: real, penalty_paid: !!rec.penalty_paid }), 'tontine_id,round,member_id');
     audit('Versement de ' + plainMoney(removed) + ' supprimé pour ' + name + ' (' + (gone ? methodName(gone.m) + ', ' : '') + 'tour ' + (round + 1) + (gone && gone.at ? ', ' + fmtShort(gone.at) : '') + ') : saisi par erreur');
@@ -1297,13 +1383,15 @@
   }
 
   // ---------- Actions ----------
-  const eqPay = (round, member_id) => ({ tontine_id: S.tid, round, member_id });
+  const eqPay = (round, member_id) => ({ tontine_id: S.tid, round: round + rb(), member_id });
   document.addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
     try {
       if (act === 'authmode') { ui.authMode = b.dataset.mode; render(); return; }
       if (act === 'forgotpw') { forgotDialog(); return; }
+      if (act === 'addtour') { addTourDialog(); return; }
+      if (act === 'newcycle') { newCycleDialog(); return; }
       if (act === 'back') { go('#/tour'); return; }
       if (act === 'calprev' || act === 'calnext') { ui.calMonth = shiftMonth(ui.calMonth || monthKey(todayISO()), act === 'calnext' ? 1 : -1); render(); return; }
       if (act === 'caltoday') { ui.calMonth = ''; render(); return; }
@@ -1453,8 +1541,8 @@
         delete ui.draft['v.' + id]; await loadTable('payments'); if ($('modal').open) $('modal').close(); toast('Dernier versement annulé.');
       } else if (act === 'payout') {
         if (ui.armed !== 'payout') { ui.armed = 'payout'; render(); return; }
-        ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur, member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
-        notify({ kind: 'payout', tontine_id: S.tid, round: D.cur });
+        ui.armed = ''; await B.upsert('payouts', { tontine_id: S.tid, round: D.cur + rb(), member_id: D.benef.id, amount: D.got, paid_on: todayISO() }, 'tontine_id,round');
+        notify({ kind: 'payout', tontine_id: S.tid, round: D.cur + rb() });
         await loadTable('payouts'); toast('Cagnotte remise à ' + D.benef.name + '.');
         audit('Cagnotte du tour ' + (D.cur + 1) + ' remise à ' + D.benef.name + ' (' + plainMoney(D.got) + ')');
         buzz([30, 40, 60]); celebrate();
@@ -1463,12 +1551,12 @@
         if (ui.armed !== 'undo') { ui.armed = 'undo'; render(); return; }
         const who = S.members[D.cur - 1];
         audit('Remise du tour ' + D.cur + ' à ' + (who ? who.name : '?') + ' annulée');
-        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 }); await loadTable('payouts'); toast('La remise à ' + (who ? who.name : 'ce membre') + ' est annulée : son tour est de nouveau en cours.');
+        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: D.cur - 1 + rb() }); await loadTable('payouts'); toast('La remise à ' + (who ? who.name : 'ce membre') + ' est annulée : son tour est de nouveau en cours.');
       } else if (act === 'unserve') {
         const i = S.members.findIndex(m => m.id === id); if (i < 0 || !S.out.has(i)) return;
         if (ui.armed !== 'unserve:' + id) { ui.armed = 'unserve:' + id; render(); return; }
         audit('Remise du tour ' + (i + 1) + ' à ' + S.members[i].name + ' annulée');
-        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i }); await loadTable('payouts');
+        ui.armed = ''; await B.remove('payouts', { tontine_id: S.tid, round: i + rb() }); await loadTable('payouts');
         toast('La remise à ' + S.members[i].name + ' est annulée : il n\'est plus marqué comme servi.');
       } else if (act === 'swap') { swapDialog(Number(b.dataset.r)); return;
       } else if (act === 'swapdo' || act === 'skipdo') {
@@ -1566,6 +1654,16 @@
         if (phone) await B.upsert('contacts', { member_id: m.id, tontine_id: S.tid, phone: phone.slice(0, 30) }, 'member_id');
         clearDraft('a.'); await Promise.all([loadTable('members'), loadTable('contacts')]); render();
         const n = $('addForm') && $('addForm').querySelector('input'); if (n) n.focus();
+      } else if (f.id === 'addTourForm') {
+        const name = $('atName').value.trim(), phone = $('atPhone').value.trim(); if (!name || !isAdmin()) return;
+        const n = S.members.length, btn = f.querySelector('button.primary'); if (btn.disabled) return; btn.disabled = true;
+        try {
+          const [m] = await B.insert('members', { tontine_id: S.tid, name, position: S.members.reduce((x, k) => Math.max(x, k.position), 0) + 1, status: 'active' });
+          if (phone) await B.upsert('contacts', { member_id: m.id, tontine_id: S.tid, phone: phone.slice(0, 30) }, 'member_id');
+          await Promise.all([loadTable('members'), loadTable('contacts')]);
+          audit('Tour ' + (n + 1) + ' ajouté : ' + name);
+          $('modal').close(); render(); toast('Tour ' + (n + 1) + ' ajouté pour ' + name + '.');
+        } catch (e) { $('atErr').textContent = friendly(e); btn.disabled = false; }
       } else if (f.id === 'cfgForm') {
         const v = fv(f), g = k => v['s.' + k], c = S.cfg;
         const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join') };
@@ -1632,6 +1730,7 @@
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal') && !ui.forcePw) $('modal').close(); return; }
     if (b.dataset.m.startsWith('theme:')) { setTheme(b.dataset.m.slice(6)); document.querySelectorAll('#modalBody [data-m^="theme:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'theme:' + getTheme()))); return; }
+    if (b.dataset.m.startsWith('nc')) { await ncAction(b.dataset.m); return; }
     if (b.dataset.m === 'pwform') { pwForm(false); return; }
     if (b.dataset.m === 'pwsave') { await pwAction(); return; }
     if (b.dataset.m === 'copypw') { try { await navigator.clipboard.writeText(b.dataset.pw); toast('Mot de passe copié.'); } catch (e) { toast(b.dataset.pw); } return; }
@@ -1643,6 +1742,12 @@
     else if (b.dataset.m === 'pushoff') { await disablePush(); await refreshPush(); toast('Notifications désactivées sur cet appareil.'); }
     else if (b.dataset.m === 'new') go('#/accueil');
     else if (b.dataset.m === 'open') { S.tid = b.dataset.id; S.cfg = S.tontines.find(t => t.id === S.tid); ui.topic = 'general'; ui.rendered = ''; ui.draft = {}; await openTontine(); go('#/tour'); }
+  });
+  $('modal').addEventListener('change', ev => {
+    const nc = ui.nc, id = ev.target.id; if (!nc || !$('modal').open) return;
+    if (id === 'ncStart') { nc.start = ev.target.value || nc.start; ncRender(); }
+    else if (id === 'ncFirst') { nc.pinFirst = ev.target.value; ncApply(); ncRender(); }
+    else if (id === 'ncLast') { nc.pinLast = ev.target.value; ncApply(); ncRender(); }
   });
   $('modal').addEventListener('cancel', ev => { if (ui.forcePw) ev.preventDefault(); });   // the forced password change cannot be dismissed with Esc
   window.addEventListener('hashchange', () => route());

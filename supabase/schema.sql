@@ -25,6 +25,11 @@ create table if not exists public.tontines (
   created_at    timestamptz not null default now()
 );
 
+-- Cycles : un cycle = chaque membre reçoit la cagnotte une fois. Les tours d'un nouveau cycle continuent la numérotation
+-- (round) du précédent : `cycle_base` = nombre de tours des cycles terminés, `start_date` = début du cycle en cours.
+alter table public.tontines add column if not exists cycle int not null default 1 check (cycle >= 1);
+alter table public.tontines add column if not exists cycle_base int not null default 0 check (cycle_base >= 0);
+
 create table if not exists public.members (
   id          uuid primary key default gen_random_uuid(),
   tontine_id  uuid not null references public.tontines(id) on delete cascade,
@@ -287,7 +292,35 @@ begin
   return mid;
 end $$;
 
+-- ---------- Nouveau cycle (en une seule transaction) ----------
+-- Un organisateur lance un nouveau cycle quand tous les membres actifs ont reçu la cagnotte : p_order liste tous les membres
+-- actifs, une fois chacun, dans l'ordre de passage voulu ; p_start est le début du premier tour. Les versements et remises
+-- du cycle terminé restent en base (leurs numéros de tour sont inférieurs à cycle_base).
+create or replace function public.new_cycle(p_tontine uuid, p_start date, p_order uuid[])
+returns int language plpgsql security definer set search_path = public as $$
+declare t public.tontines; nmem int; served int; newbase int;
+begin
+  select * into t from public.tontines where id = p_tontine for update;
+  if not found or not public.is_owner(p_tontine) then raise exception 'forbidden'; end if;
+  if p_start is null then raise exception 'start_required'; end if;
+  select count(*) into nmem from public.members where tontine_id = p_tontine and status = 'active';
+  select count(*) into served from public.payouts where tontine_id = p_tontine and round >= t.cycle_base;
+  if nmem = 0 or served < nmem then raise exception 'cycle_not_finished'; end if;
+  if coalesce(array_length(p_order, 1), 0) <> nmem
+    or (select count(distinct x) from unnest(p_order) x) <> nmem
+    or exists (select 1 from unnest(p_order) x where not exists (
+         select 1 from public.members m where m.id = x and m.tontine_id = p_tontine and m.status = 'active'))
+    then raise exception 'bad_order'; end if;
+  select greatest(t.cycle_base, coalesce((select max(round) + 1 from public.payouts where tontine_id = p_tontine), 0),
+                  coalesce((select max(round) + 1 from public.payments where tontine_id = p_tontine), 0)) into newbase;
+  update public.tontines set cycle = cycle + 1, cycle_base = newbase, start_date = p_start where id = p_tontine;
+  update public.members m set position = o.ord from unnest(p_order) with ordinality as o(id, ord) where m.id = o.id;
+  return t.cycle + 1;
+end $$;
+
 revoke all on function public.tontine_preview(text), public.join_tontine(text, text, text) from public, anon;
+revoke all on function public.new_cycle(uuid, date, uuid[]) from public, anon;
+grant execute on function public.new_cycle(uuid, date, uuid[]) to authenticated;
 grant execute on function public.tontine_preview(text), public.join_tontine(text, text, text) to authenticated;
 revoke execute on function public.is_creator(uuid), public.is_owner(uuid), public.is_active(uuid), public.is_in(uuid),
   public.topic_open(uuid, uuid), public.guard_organizers() from public, anon;
