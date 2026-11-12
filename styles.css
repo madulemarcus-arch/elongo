@@ -452,3 +452,16 @@ button.callme:active { transform: scale(.98); }
 .nctl .mv { display: flex; gap: 4px; flex: none; }
 @keyframes ncin { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .nctl li { animation: none; } }
+
+/* Hero card: animated sky behind the content, progress ring beside the pot */
+.hero > * { position: relative; z-index: 1; }
+.hero canvas.sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.potrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.ring { position: relative; flex: none; width: 76px; height: 76px; display: grid; place-items: center; text-align: center; }
+.ring svg { position: absolute; inset: 0; width: 76px; height: 76px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 6; }
+.ring .rt { stroke: rgba(255, 255, 255, .18); }
+.ring .rv { stroke: var(--coin); stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(.2, .8, .2, 1); filter: drop-shadow(0 0 5px rgba(244, 183, 63, .55)); }
+.ring b { font-size: 1.05rem; font-weight: 800; line-height: 1; margin-top: -8px; }
+.ring small { position: absolute; bottom: 17px; font-size: .58rem; opacity: .8; letter-spacing: .02em; }
+@media (prefers-reduced-motion: reduce) { .ring .rv { transition: none; } }

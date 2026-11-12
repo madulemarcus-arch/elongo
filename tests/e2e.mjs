@@ -444,6 +444,9 @@ step('payout cancelled from the calendar');
 t = await text(A);
 assert.ok(!t.includes('En retard'));
 await shot(A, '06-tour2');
+assert.equal(await A.locator('.hero canvas.sky').count(), 1, 'the animated sky sits behind the hero card');
+assert.match((await A.textContent('.hero .ring b')).trim(), /^\d\/4$/, 'the ring counts the members who paid in full');
+assert.ok((await A.textContent('.hero [data-ck=pot]')).replace(/\s/g, '').includes('40000'), 'the pot amount shows its final value');
 
 // ---------- Live board ----------
 await tab(A, 'direct');

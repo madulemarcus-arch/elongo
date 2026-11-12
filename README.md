@@ -113,6 +113,10 @@ Un cycle, c'est quand chaque membre a reçu la cagnotte une fois. Quand le derni
 
 Mise en place (une fois, à chaque mise à jour du schéma) : relancer `supabase/schema.sql` dans Supabase > SQL Editor (il ajoute `cycle` et `cycle_base` à la tontine et la fonction `new_cycle`), et recoller `supabase/functions/push/index.ts` dans la fonction push (les rappels et notifications comptent les tours à partir du début du cycle).
 
+## Une appli vivante
+
+La carte du tour (onglets Accueil et Tour) est animée : un **ciel** discret derrière (points qui dérivent, étoiles dorées qui scintillent, une planète sur son orbite), un **anneau** qui montre combien de membres ont tout versé (« 3/4 ont payé ») et des **chiffres qui montent** jusqu'à leur valeur. Tout s'arrête automatiquement si le téléphone demande de réduire les animations, et se met en pause quand l'écran n'est pas visible.
+
 ## Droits
 
 | | Organisateur | Membre actif | Demandeur |
