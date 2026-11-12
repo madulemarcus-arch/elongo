@@ -126,7 +126,7 @@
     allMembers: [], contacts: new Map(), pay: new Map(), out: new Map(), topics: [], msgs: [], journal: [], reactions: [],
     loaded: false, members: [], pending: [], preview: null,
   };
-  const ui = { push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), attBusy: new Set(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
+  const ui = { counts: {}, ringPct: 0, push: { supported: false, subscribed: false, permission: 'default' }, armed: '', draft: {}, authMode: null, copyText: '', topic: 'general', pending: null, att: new Map(), attBusy: new Set(), chatBusy: false, rec: null, rendered: '', seen: null, known: null };
   const dv = (k, def) => ui.draft[k] != null ? ui.draft[k] : def;
   // The principal administrator is the account in tontines.owner_id; every organizer (isAdmin) has the same rights, including over the principal.
   const isCreator = () => !!(S.cfg && S.user && S.cfg.owner_id === S.user.id);
@@ -504,6 +504,77 @@
   }
   window.addEventListener('pagehide', () => { if (callSt) endCall(true, 'ended'); });
 
+  // ---------- Effects: animated sky, progress ring, climbing numbers ----------
+  // Decorative only. Skipped when the phone asks for reduced motion (and in automated browsers, so tests read final values).
+  const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.webdriver;
+  // One canvas lives behind the hero card: a drifting network of points, twinkling gold stars and a glowing planet on an orbit.
+  // It is moved into the new hero after every render, so a live update does not restart the animation.
+  const sky = (() => {
+    let cv = null, g = null, host = null, W = 0, H = 0, pts = [], raf = 0, last = 0, seen = true, io = null;
+    const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+    function init() {
+      W = host.clientWidth; H = host.clientHeight; if (!W || !H) return;
+      cv.width = W * dpr(); cv.height = H * dpr(); g.setTransform(dpr(), 0, 0, dpr(), 0, 0);
+      const n = Math.max(14, Math.round(W * H / 6500));
+      pts = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .22, vy: (Math.random() - .5) * .22, r: .7 + Math.random() * 1.3, star: Math.random() < .2, ph: Math.random() * 6.28 }));
+    }
+    function draw(t) {
+      g.clearRect(0, 0, W, H); const L = Math.min(105, Math.max(64, W / 4));
+      for (const p of pts) { p.x += p.vx; p.y += p.vy; if (p.x < -8) p.x = W + 8; if (p.x > W + 8) p.x = -8; if (p.y < -8) p.y = H + 8; if (p.y > H + 8) p.y = -8; }
+      g.lineWidth = .6;
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+        const a = pts[i], b = pts[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < L) { g.strokeStyle = `rgba(157,178,255,${(.22 * (1 - d / L)).toFixed(3)})`; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+      }
+      for (const p of pts) {
+        const tw = .55 + .45 * Math.sin(t / 700 + p.ph);
+        g.globalAlpha = p.star ? tw : .75; g.fillStyle = p.star ? '#f4b73f' : '#cdd8ff';
+        g.beginPath(); g.arc(p.x, p.y, p.star ? p.r + 1 : p.r, 0, 6.2832); g.fill();
+      }
+      g.globalAlpha = 1;
+      const cx = W * .68, cy = H * .5, rx = W * .5, ry = H * .3;   // orbit: a dotted ellipse with a glowing planet
+      g.save(); g.translate(cx, cy); g.rotate(-.3); g.setLineDash([2, 7]); g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = 1;
+      g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, 6.2832); g.stroke(); g.setLineDash([]);
+      const a = t / 5200, px = Math.cos(a) * rx, py = Math.sin(a) * ry, gr = g.createRadialGradient(px, py, 0, px, py, 13);
+      gr.addColorStop(0, 'rgba(255,236,170,.95)'); gr.addColorStop(.35, 'rgba(244,183,63,.55)'); gr.addColorStop(1, 'rgba(244,183,63,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(px, py, 13, 0, 6.2832); g.fill(); g.restore();
+    }
+    function loop(t) {
+      if (!cv || !cv.isConnected) { raf = 0; return; }
+      raf = requestAnimationFrame(loop);
+      if (!seen || document.hidden || t - last < 33) return;   // about 30 images per second, paused when out of sight
+      last = t; draw(t);
+    }
+    return {
+      attach(h) {
+        if (!cv) { cv = document.createElement('canvas'); cv.className = 'sky'; cv.setAttribute('aria-hidden', 'true'); g = cv.getContext('2d'); }
+        if (!g) return;
+        host = h; if (cv.parentNode !== h) h.prepend(cv);
+        if (io) io.disconnect();
+        if ('IntersectionObserver' in window) { io = new IntersectionObserver(es => { seen = es[0].isIntersecting; }); io.observe(h); }
+        if (!pts.length || Math.abs(W - h.clientWidth) > 8 || Math.abs(H - h.clientHeight) > 8) init();
+        draw(performance.now());
+        if (!calm() && !raf) raf = requestAnimationFrame(loop);
+      },
+    };
+  })();
+  // Ring: how many members have paid their whole contribution for the round. It grows from its last value.
+  function ringHtml(paid, n) {
+    const pct = n ? Math.round(100 * paid / n) : 0, R = 31, C = 2 * Math.PI * R, from = ui.ringPct || 0;
+    return `<div class="ring" role="img" aria-label="${paid} membre${paid > 1 ? 's' : ''} sur ${n} ${paid > 1 ? 'ont' : 'a'} tout versé"><svg viewBox="0 0 76 76" aria-hidden="true"><circle class="rt" cx="38" cy="38" r="${R}"/>
+      <circle class="rv" cx="38" cy="38" r="${R}" data-p="${pct}" data-c="${C.toFixed(1)}" style="stroke-dasharray:${C.toFixed(1)};stroke-dashoffset:${(C * (1 - from / 100)).toFixed(1)}"/></svg><b class="num">${paid}/${n}</b><small>ont payé</small></div>`;
+  }
+  // Numbers that climb to their value: elements carry data-count (the value) and data-ck (what it is); the markup already holds the final text.
+  function countUps() {
+    document.querySelectorAll('#view [data-count]').forEach(el => {
+      const key = el.dataset.ck || 'n', to = Number(el.dataset.count), from = ui.counts[key] === undefined ? 0 : ui.counts[key]; ui.counts[key] = to;
+      if (calm() || from === to) return;
+      const t0 = performance.now(), d = 700;
+      const step = now => { if (!el.isConnected) return; const k = Math.min(1, (now - t0) / d), e = 1 - Math.pow(1 - k, 3); el.textContent = money(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); };
+      el.textContent = money(from); requestAnimationFrame(step);
+    });
+  }
+
   // ---------- Router ----------
   const TABS = ['bord', 'tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
   const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -517,7 +588,7 @@
     else view = TABS.includes(r) ? r : 'bord';
     if (view === 'organisateur' && !isAdmin()) view = 'bord';
     const changed = S.view !== view;
-    if (changed) { ui.armed = ''; ui.copyText = ''; ui.rendered = ''; }
+    if (changed) { ui.armed = ''; ui.copyText = ''; ui.rendered = ''; ui.counts = {}; ui.ringPct = 0; }
     S.view = view;
     if (soft === true && !changed && ['auth', 'welcome', 'join'].includes(view)) return;   // data changes do not concern these forms
     if (view === 'join' && (changed || !soft)) loadPreview(arg);
@@ -547,7 +618,11 @@
     const html = ({ auth: viewAuth, welcome: viewWelcome, join: viewJoin, pending: viewPending, bord: () => viewHome(D), tour: () => viewTour(D), calendrier: () => viewCal(D), direct: () => viewLive(D), organisateur: () => viewAdmin(D) })[S.view];
     v.innerHTML = html ? html() : '';
     ui.rendered = S.view;
-    requestAnimationFrame(() => document.querySelectorAll('#view .bar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; ui.potPct = Number(i.dataset.w); }));   // the pot bar grows from its last value
+    requestAnimationFrame(() => {   // the pot bar and the ring grow from their last value
+      document.querySelectorAll('#view .bar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; ui.potPct = Number(i.dataset.w); });
+      document.querySelectorAll('#view .ring .rv').forEach(c => { c.style.strokeDashoffset = (Number(c.dataset.c) * (1 - Number(c.dataset.p) / 100)).toFixed(1); ui.ringPct = Number(c.dataset.p); });
+    });
+    v.querySelectorAll('.hero').forEach(sky.attach); countUps();
     if (keep) {
       const x = [...v.querySelectorAll('input,textarea')].find(el => focusKey(el) === keep.k);
       if (x) { x.focus({ preventScroll: true }); if (x.value !== keep.value && x.type !== 'checkbox') x.value = keep.value; try { x.setSelectionRange(keep.s, keep.e); } catch (e) {} }
@@ -644,9 +719,9 @@
       + (D.cur > 0 ? undoBtn(D, 'ghost') : '') + '</div>' : '';
     const hero = `<section class="hero" aria-live="polite"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
       <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><p class="when" style="opacity:.75;font-size:.9rem">Tour de ${c.interval_days} jour${c.interval_days > 1 ? 's' : ''}, du ${esc(fmtShort(roundStart(c, D.cur)))} au ${esc(fmtShort(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${got >= pot ? 'Cagnotte complète' : late ? 'En retard' : 'En cours'}</span></div>
-      <div class="pot"><div><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div></div>
+      <div class="pot"><div class="potrow"><div><div class="lbl">Cagnotte du tour</div><div class="big num" data-count="${pot}" data-ck="pot">${money(pot)}</div></div>${ringHtml(D.paidIds.size, D.n)}</div>
       <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}" style="width:${ui.potPct == null ? 0 : ui.potPct}%"></i></div>
-      <div class="lbl num">${money(got)} encaissés sur ${money(pot)}, ${got < pot ? `il reste ${money(pot - got)} à encaisser` : 'cagnotte complète, prête à être remise'}</div></div>${mine}${remind}${act}</section>`;
+      <div class="lbl num"><span data-count="${got}" data-ck="got">${money(got)}</span> encaissés sur ${money(pot)}, ${got < pot ? `il reste ${money(pot - got)} à encaisser` : 'cagnotte complète, prête à être remise'}</div></div>${mine}${remind}${act}</section>`;
     return header + hero + contribPanel(c, D);
   }
   // Takes back the last payout (the beneficiary goes back to "not served yet"); asks twice so it cannot happen by accident.
@@ -995,9 +1070,9 @@
       }
       now = `<section class="hero home-now"><div><p class="eyebrow">Tour ${D.cur + 1} sur ${D.n}, bénéficiaire</p><h2>${esc(D.benef.name)}</h2>
         <p class="when">Fin du tour : <b>${esc(fmtDate(due))}</b> · ${esc(rel(due))}</p><span class="coin${late && got < pot ? ' late' : ''}">${status}</span></div>
-        <div class="pot"><div class="lbl">Cagnotte du tour</div><div class="big num">${money(pot)}</div>
+        <div class="pot"><div class="potrow"><div><div class="lbl">Cagnotte du tour</div><div class="big num" data-count="${pot}" data-ck="pot">${money(pot)}</div></div>${ringHtml(D.paidIds.size, D.n)}</div>
         <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}" style="width:${ui.potPct == null ? 0 : ui.potPct}%"></i></div>
-        <div class="lbl num">${money(got)} encaissés · ${D.paidIds.size}/${D.n} membres ont tout versé</div></div>${mine}</section>${alerts.length ? '<div class="alerts">' + alerts.join('') + '</div>' : ''}`;
+        <div class="lbl num"><span data-count="${got}" data-ck="got">${money(got)}</span> encaissés · ${D.paidIds.size}/${D.n} membres ont tout versé</div></div>${mine}</section>${alerts.length ? '<div class="alerts">' + alerts.join('') + '</div>' : ''}`;
     }
     const kpis = `<section class="kpis" aria-label="Chiffres clés">${tile('💰', 'Total encaissé', money(total), 'depuis le début')}
       ${tile('🎁', 'Cagnottes remises', `${done}/${D.n}`, given ? money(given) + ' remis' : 'aucune pour l\'instant')}
