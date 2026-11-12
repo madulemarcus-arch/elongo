@@ -649,6 +649,17 @@ await A.waitForSelector('text=Tour 2 sur 4');
 await ctx.setOffline(false);
 step('persistence, manifest, offline app shell');
 
+// Lists and cards: Inter embedded and cached, colour per person, staggered rows, placeholder while loading
+assert.equal((await ctx.request.get(url + 'fonts/inter-latin.woff2')).status(), 200, 'Inter font is served');
+assert.ok((await (await ctx.request.get(url + 'sw.js')).text()).includes('fonts/inter-latin.woff2'), 'the font is in the offline cache');
+assert.ok(await A.evaluate(() => document.fonts.check("14px Inter")), 'Inter is available');
+assert.ok(await A.evaluate(() => /Inter/.test(getComputedStyle(document.body).fontFamily)), 'body uses Inter');
+await A.click('a[data-tab=tour]');
+await A.waitForSelector('.crow .av[style*="--h"]');
+assert.ok(await A.evaluate(() => { const h = [...document.querySelectorAll('.crow .av')].map(e => e.style.getPropertyValue('--h')); return h.length > 1 && new Set(h).size > 1; }), 'each member has an own colour');
+assert.ok(await A.evaluate(() => !document.querySelector('.skel')), 'no placeholder left once loaded');
+step('lists: embedded font, avatar colours');
+
 // Signing out removes this device from the notifications of that account
 await A.click('#userChip');
 await A.click('[data-m=pushon]');

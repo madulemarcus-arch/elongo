@@ -575,6 +575,9 @@
     });
   }
 
+  // Placeholder shown while the data loads: a few blocks that shimmer (the word stays for screen readers).
+  const skeleton = () => '<div class="skel" role="status" aria-label="Chargement…"><i></i><i></i><i></i></div>';
+
   // ---------- Router ----------
   const TABS = ['bord', 'tour', 'calendrier', 'direct', 'discussion', 'organisateur'];
   const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -610,7 +613,7 @@
     if (!(B.user && B.user.must)) ui.forcePw = false;
     else if (!ui.forcePw || !$('modal').open) { ui.forcePw = true; pwForm(true); }   // a reset password must be replaced before anything else
     const ready = S.loaded || ['auth', 'welcome', 'join'].includes(S.view);
-    if (!ready) { v.innerHTML = '<p class="empty">Chargement…</p>'; ui.rendered = ''; return; }
+    if (!ready) { v.innerHTML = skeleton(); ui.rendered = ''; return; }
     if (S.view === 'discussion') { if (ui.rendered !== 'discussion') { v.innerHTML = chatSkeleton(); ui.rendered = 'discussion'; } renderChatParts(); return; }
     let keep = null;
     if (a && v.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && focusKey(a)) keep = { k: focusKey(a), value: a.value, s: a.selectionStart, e: a.selectionEnd };
@@ -681,7 +684,7 @@
   }
   function viewJoin() {
     const p = S.preview;
-    if (!p) return '<p class="empty">Chargement…</p>';
+    if (!p) return skeleton();
     if (p.missing) return `<section class="panel empty"><h2>Code inconnu</h2><p>Ce lien d'invitation n'est pas valide. Demandez-en un nouveau à l'organisateur.</p><button type="button" data-act="back">Retour</button></section>`;
     if (!p.join_open) return `<section class="panel empty"><h2>Inscriptions fermées</h2><p>L'organisateur de « ${esc(p.name)} » n'accepte plus de demandes.</p><button type="button" data-act="back">Retour</button></section>`;
     return `<section class="panel"><p class="eyebrow">Invitation</p><h2>Rejoindre « ${esc(p.name)} »</h2>
@@ -738,7 +741,7 @@
       + (owed ? `<p class="pen" style="margin:0 0 8px">Pénalités à percevoir : ${money(owed)}</p>` : '')
       + '<ul class="list">' + S.members.map((m, i) => {
         const paid = D.paidIds.has(m.id), rec = S.pay.get(D.cur + '_' + m.id), a = D.amt.get(m.id) || 0, rest = Math.max(0, c.amount - a), pen = penOf(c, D, m), settled = !!(rec && rec.penalty_paid), pct = Math.min(100, Math.round(100 * a / c.amount));
-        return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${punctuality(m).streak >= 1 ? ` <span class="star" title="${punctuality(m).streak} tour${punctuality(m).streak > 1 ? 's' : ''} payé${punctuality(m).streak > 1 ? 's' : ''} à temps d'affilée">⭐${punctuality(m).streak > 1 ? punctuality(m).streak : ''}</span>` : ''}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
+        return `<li class="row crow${me && m.id === me.id ? ' is-me' : ''}"><span class="av" style="--h:${hueOf(m.name)}" aria-hidden="true">${esc(initials(m.name))}</span><div class="grow"><div class="name">${memberLink(m)}${punctuality(m).streak >= 1 ? ` <span class="star" title="${punctuality(m).streak} tour${punctuality(m).streak > 1 ? 's' : ''} payé${punctuality(m).streak > 1 ? 's' : ''} à temps d'affilée">⭐${punctuality(m).streak > 1 ? punctuality(m).streak : ''}</span>` : ''}${i === D.cur ? ' <span class="pill now">Bénéficiaire</span>' : ''}</div>
           <div class="sub num">${paid ? 'Complet : ' + money(c.amount) + (rec && (rec.done_on || rec.paid_on) ? ' le ' + esc(fmtShort(rec.done_on || rec.paid_on)) : '') : a > 0 ? `Versé ${money(a)} sur ${money(c.amount)}, reste ${money(rest)}` : `Rien versé, ${money(c.amount)} attendus`}${rec && (rec.log || []).some(x => x.pending) ? ' <span class="pill wait">⏳ en attente d\'envoi</span>' : ''}</div>
           <div class="mbar${paid ? ' full' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Cotisation de ${esc(m.name)}"><i style="width:${pct}%"></i></div>${pen ? `<div class="pen${settled ? ' settled' : ''}">Pénalité ${money(pen)}${settled ? ' réglée' : ''}</div>` : ''}</div>
           <div class="side">${callBtn(m)}<span class="pill ${paid ? 'ok' : a > 0 ? 'part' : 'wait'}">${paid ? 'Complet' : a > 0 ? pct + '%' : 'En attente'}</span>${adm ? `<button class="mini" data-act="manage" data-id="${esc(m.id)}" aria-label="Gérer la cotisation de ${esc(m.name)}">${paid ? 'Détail' : 'Verser'}</button>` : ''}</div></li>`;
@@ -1078,7 +1081,7 @@
         <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}" style="width:${ui.potPct == null ? 0 : ui.potPct}%"></i></div>
         <div class="lbl num"><span data-count="${got}" data-ck="got">${money(got)}</span> encaissés · ${D.paidIds.size}/${D.n} membres ont tout versé</div></div>${mine}</section>${alerts.length ? '<div class="alerts">' + alerts.join('') + '</div>' : ''}`;
     }
-    const kpis = `<section class="kpis" aria-label="Chiffres clés">${tile('💰', 'Total encaissé', money(total), 'depuis le début')}
+    const kpis = `<section class="kpis" aria-label="Chiffres clés">${tile('💰', 'Total encaissé', `<span data-count="${total}" data-ck="total">${money(total)}</span>`, 'depuis le début')}
       ${tile('🎁', 'Cagnottes remises', `${done}/${D.n}`, given ? money(given) + ' remis' : 'aucune pour l\'instant')}
       ${tile('👥', 'Membres', String(D.n), isAdmin() && S.pending.length ? S.pending.length + ' en attente' : 'actifs')}
       ${tile('📅', 'Cycle', cycle + ' %', over ? 'terminé' : (D.n - D.cur) + ' tour' + (D.n - D.cur > 1 ? 's' : '') + ' restant' + (D.n - D.cur > 1 ? 's' : ''))}</section>`;
