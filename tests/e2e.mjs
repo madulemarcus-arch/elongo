@@ -672,6 +672,20 @@ assert.ok(await A.evaluate(() => { const h = [...document.querySelectorAll('.cro
 assert.ok(await A.evaluate(() => !document.querySelector('.skel')), 'no placeholder left once loaded');
 step('lists: embedded font, avatar colours');
 
+// Animations: automatic / always on (ignores the phone's "reduce motion") / reduced
+await A.click('#userChip');
+assert.equal(await A.getAttribute('[data-m="motion:auto"]', 'aria-pressed'), 'true', 'animations follow the phone by default');
+await A.click('[data-m="motion:on"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'on');
+assert.equal(await A.evaluate(() => localStorage.getItem('elongo.motion')), 'on');
+await A.click('[data-m="motion:off"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'off');
+assert.equal(await A.evaluate(() => getComputedStyle(document.querySelector('.tabbar'), '::before').transitionDuration), '0s', 'reduced: the tab pill does not glide');
+await A.click('[data-m="motion:auto"]');
+assert.equal(await A.evaluate(() => document.documentElement.hasAttribute('data-motion')), false);
+await A.keyboard.press('Escape');
+step('animations preference');
+
 // Signing out removes this device from the notifications of that account
 await A.click('#userChip');
 await A.click('[data-m=pushon]');
