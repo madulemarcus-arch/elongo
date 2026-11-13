@@ -552,3 +552,51 @@ button.callme:active { transform: scale(.98); }
 :root[data-motion="off"] .crow:hover .av { transform: none; }
 
 /* Animations: data-motion="on" ignores the phone's "reduce motion" setting, "off" forces calm. */
+
+/* Step 4: life on every screen, in the spirit of CISPOLstore Manager. A soft page background that drifts behind everything, dialogs that
+   slide up, a sheen that crosses the hero card, calendar cells that pop in, messages that glide in, and rows that answer the finger. */
+body::before { content: ''; position: fixed; inset: -25%; z-index: -1; pointer-events: none;
+  background: radial-gradient(40% 35% at 20% 15%, rgba(244, 183, 63, .17), transparent 70%), radial-gradient(45% 40% at 85% 30%, rgba(70, 105, 235, .15), transparent 70%), radial-gradient(40% 35% at 40% 92%, rgba(244, 183, 63, .11), transparent 70%);
+  animation: ambient 24s ease-in-out infinite alternate; }
+#view.enter > :nth-child(2) { animation-delay: 70ms; } #view.enter > :nth-child(3) { animation-delay: 140ms; } #view.enter > :nth-child(4) { animation-delay: 210ms; }
+#view.enter > :nth-child(5) { animation-delay: 280ms; } #view.enter > :nth-child(n+6) { animation-delay: 340ms; }
+@keyframes ambient { from { transform: translate3d(-3%, -2%, 0) scale(1); } to { transform: translate3d(4%, 3%, 0) scale(1.12); } }
+dialog[open] { animation: sheetin .3s cubic-bezier(.2, .8, .2, 1); }
+dialog[open]::backdrop { animation: dfade .25s ease-out; }
+@keyframes sheetin { from { opacity: 0; transform: translateY(26px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes dfade { from { opacity: 0; } to { opacity: 1; } }
+.hero::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; transform: translateX(-130%);
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .11) 50%, transparent 62%); animation: hsweep 7s ease-in-out 1.6s infinite; }
+@keyframes hsweep { 0%, 45% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+#view.enter .cd { animation: cellin .38s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(120ms + var(--c, 0) * 32ms); }
+#view.enter .cd:nth-child(7n+2) { --c: 1; } #view.enter .cd:nth-child(7n+3) { --c: 2; } #view.enter .cd:nth-child(7n+4) { --c: 3; }
+#view.enter .cd:nth-child(7n+5) { --c: 4; } #view.enter .cd:nth-child(7n+6) { --c: 5; } #view.enter .cd:nth-child(7n) { --c: 6; }
+@keyframes cellin { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+.mrow.fresh .msg { animation: msgin .34s cubic-bezier(.2, .8, .2, 1) both; transform-origin: 0 100%; --dx: -14px; }
+.mrow.me.fresh .msg { transform-origin: 100% 100%; --dx: 14px; }
+@keyframes msgin { from { opacity: 0; transform: translate(var(--dx), 8px) scale(.94); } to { opacity: 1; transform: none; } }
+.row[data-act], .chip, .kpi, .panel .mini { transition: transform .12s, background .15s, box-shadow .15s; }
+.row[data-act]:active, .kpi:active { transform: scale(.985); background: var(--tint); }
+.panel { transition: box-shadow .2s, transform .2s; }
+.panel:focus-within { box-shadow: var(--shadow), 0 0 0 3px rgba(244, 183, 63, .22); }
+input:focus, select:focus, textarea:focus { transition: box-shadow .18s, border-color .18s; box-shadow: 0 0 0 3px rgba(244, 183, 63, .28); }
+.empty { animation: rise .5s ease-out both; }
+.empty h2 { animation: float 3.6s ease-in-out infinite; display: inline-block; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.pill.late, .pill.warn { animation: nudge 2.4s ease-in-out infinite; }
+@keyframes nudge { 0%, 70%, 100% { transform: none; } 78% { transform: translateX(-2px); } 86% { transform: translateX(2px); } 94% { transform: translateX(-1px); } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) body::before { animation: none; }
+  :root:not([data-motion="on"]) dialog[open], :root:not([data-motion="on"]) dialog[open]::backdrop { animation: none; }
+  :root:not([data-motion="on"]) .hero::after { display: none; }
+  :root:not([data-motion="on"]) #view.enter .cd, :root:not([data-motion="on"]) .mrow.fresh .msg, :root:not([data-motion="on"]) .empty, :root:not([data-motion="on"]) .empty h2, :root:not([data-motion="on"]) .pill.late, :root:not([data-motion="on"]) .pill.warn { animation: none !important; }
+  :root:not([data-motion="on"]) .row[data-act], :root:not([data-motion="on"]) .chip, :root:not([data-motion="on"]) .kpi, :root:not([data-motion="on"]) .panel, :root:not([data-motion="on"]) .panel .mini, :root:not([data-motion="on"]) input, :root:not([data-motion="on"]) select, :root:not([data-motion="on"]) textarea { transition: none !important; }
+  :root:not([data-motion="on"]) .row[data-act]:active, :root:not([data-motion="on"]) .kpi:active { transform: none; }
+}
+/* same rules when « Animations réduites » is chosen in Mon compte */
+:root[data-motion="off"] body::before { animation: none; }
+:root[data-motion="off"] dialog[open], :root[data-motion="off"] dialog[open]::backdrop { animation: none; }
+:root[data-motion="off"] .hero::after { display: none; }
+:root[data-motion="off"] #view.enter .cd, :root[data-motion="off"] .mrow.fresh .msg, :root[data-motion="off"] .empty, :root[data-motion="off"] .empty h2, :root[data-motion="off"] .pill.late, :root[data-motion="off"] .pill.warn { animation: none !important; }
+:root[data-motion="off"] .row[data-act], :root[data-motion="off"] .chip, :root[data-motion="off"] .kpi, :root[data-motion="off"] .panel, :root[data-motion="off"] .panel .mini, :root[data-motion="off"] input, :root[data-motion="off"] select, :root[data-motion="off"] textarea { transition: none !important; }
+:root[data-motion="off"] .row[data-act]:active, :root[data-motion="off"] .kpi:active { transform: none; }

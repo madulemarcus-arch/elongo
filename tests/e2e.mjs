@@ -675,12 +675,17 @@ step('lists: embedded font, avatar colours');
 // Animations: automatic / always on (ignores the phone's "reduce motion") / reduced
 await A.click('#userChip');
 assert.equal(await A.getAttribute('[data-m="motion:auto"]', 'aria-pressed'), 'true', 'animations follow the phone by default');
+const animOf = sel => A.evaluate(q => getComputedStyle(document.querySelector(q.s), q.p || null).animationName, sel);
+assert.equal(await animOf({ s: 'body', p: '::before' }), 'ambient', 'the page background drifts on every screen');
+assert.equal(await animOf({ s: '#modal' }), 'sheetin', 'dialogs slide up');
 await A.click('[data-m="motion:on"]');
 assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'on');
 assert.equal(await A.evaluate(() => localStorage.getItem('elongo.motion')), 'on');
 await A.click('[data-m="motion:off"]');
 assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'off');
 assert.equal(await A.evaluate(() => getComputedStyle(document.querySelector('.tabbar'), '::before').transitionDuration), '0s', 'reduced: the tab pill does not glide');
+assert.equal(await animOf({ s: 'body', p: '::before' }), 'none', 'reduced: the page background stands still');
+assert.equal(await animOf({ s: '#modal' }), 'none', 'reduced: dialogs just appear');
 await A.click('[data-m="motion:auto"]');
 assert.equal(await A.evaluate(() => document.documentElement.hasAttribute('data-motion')), false);
 await A.keyboard.press('Escape');
