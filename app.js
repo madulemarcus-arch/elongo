@@ -578,8 +578,9 @@
       const key = el.dataset.ck || 'n', to = Number(el.dataset.count), from = ui.counts[key] === undefined ? 0 : ui.counts[key]; ui.counts[key] = to;
       if (calm() || from === to) return;
       const t0 = performance.now(), d = 700;
-      const step = now => { if (!el.isConnected) return; const k = Math.min(1, (now - t0) / d), e = 1 - Math.pow(1 - k, 3); el.textContent = money(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); };
-      el.textContent = money(from); requestAnimationFrame(step);
+      const plain = el.dataset.plain !== undefined, show = v => plain ? Math.round(v) + el.dataset.plain : money(Math.round(v));
+      const step = now => { if (!el.isConnected) return; const k = Math.min(1, (now - t0) / d), e = 1 - Math.pow(1 - k, 3); el.textContent = show(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+      el.textContent = show(from); requestAnimationFrame(step);
     });
   }
 
@@ -1090,9 +1091,9 @@
         <div class="lbl num"><span data-count="${got}" data-ck="got">${money(got)}</span> encaissés · ${D.paidIds.size}/${D.n} membres ont tout versé</div></div>${mine}</section>${alerts.length ? '<div class="alerts">' + alerts.join('') + '</div>' : ''}`;
     }
     const kpis = `<section class="kpis" aria-label="Chiffres clés">${tile('💰', 'Total encaissé', `<span data-count="${total}" data-ck="total">${money(total)}</span>`, 'depuis le début')}
-      ${tile('🎁', 'Cagnottes remises', `${done}/${D.n}`, given ? money(given) + ' remis' : 'aucune pour l\'instant')}
-      ${tile('👥', 'Membres', String(D.n), isAdmin() && S.pending.length ? S.pending.length + ' en attente' : 'actifs')}
-      ${tile('📅', 'Cycle', cycle + ' %', over ? 'terminé' : (D.n - D.cur) + ' tour' + (D.n - D.cur > 1 ? 's' : '') + ' restant' + (D.n - D.cur > 1 ? 's' : ''))}</section>`;
+      ${tile('🎁', 'Cagnottes remises', `<span data-count="${done}" data-ck="kdone" data-plain="/${D.n}">${done}/${D.n}</span>`, given ? money(given) + ' remis' : 'aucune pour l\'instant')}
+      ${tile('👥', 'Membres', `<span data-count="${D.n}" data-ck="kmem" data-plain="">${D.n}</span>`, isAdmin() && S.pending.length ? S.pending.length + ' en attente' : 'actifs')}
+      ${tile('📅', 'Cycle', `<span data-count="${cycle}" data-ck="kcyc" data-plain=" %">${cycle} %</span>`, over ? 'terminé' : (D.n - D.cur) + ' tour' + (D.n - D.cur > 1 ? 's' : '') + ' restant' + (D.n - D.cur > 1 ? 's' : ''))}</section>`;
     const next = over ? '' : `<section class="panel"><div class="chead"><h2>Prochains tours</h2><a class="lnk" href="#/calendrier">Calendrier</a></div><ul class="list">${S.members.slice(D.cur + 1, D.cur + 4).map((m, k) => {
       const r = D.cur + 1 + k; return `<li class="row"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}${me && m.id === me.id ? ' <span class="pill ok">Vous</span>' : ''}</div><div class="sub">${esc(turnDates(c, r))}</div></div><span class="sub">${esc(rel(roundEnd(c, r)))}</span></li>`; }).join('') || '<li class="hint">Aucun tour après celui-ci.</li>'}</ul></section>`;
     const ev = activityEvents(c).slice(0, 6);
@@ -1236,6 +1237,8 @@
     const log = $('chatlog'), keep = log.scrollTop, near = log.scrollHeight - log.scrollTop - log.clientHeight < 60, first = !log.dataset.drawn || log.dataset.topic !== ui.topic;
     const shown = inCur.slice(-100);
     log.innerHTML = shown.length ? shown.map((m, i) => msgHtml(m, shown[i - 1])).join('') : '<p class="hint" style="margin:8px">Aucun message dans ce sujet. Écrivez le premier ! 💬</p>';
+    if (!first && ui.chatIds && !motionReduced() && !navigator.webdriver) log.querySelectorAll('.mrow[data-mid]').forEach(r => { if (!ui.chatIds.has(r.dataset.mid)) r.classList.add('fresh'); });
+    ui.chatIds = new Set(shown.map(m => m.id));
     log.dataset.drawn = '1'; log.dataset.topic = ui.topic;
     log.scrollTop = first || near ? log.scrollHeight : keep;
     const can = canChat(), open = !cur.closed;
