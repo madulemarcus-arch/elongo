@@ -70,6 +70,23 @@
   function applyMotion() { const m = getMotion(), r = document.documentElement; if (m === 'auto') r.removeAttribute('data-motion'); else r.setAttribute('data-motion', m); }
   function setMotion(m) { store.set('elongo.motion', m); applyMotion(); }
   const motionReduced = () => { const m = getMotion(); return m === 'off' || (m === 'auto' && !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)); };
+  // ----- economy mode: a modest phone or a slow connection (or the person's choice) drops the heavy effects (animated sky, drifting background,
+  // glass blur) and stops downloading photos by itself unless on Wi-Fi. The cheap animations stay. -----
+  const ECOS = ['auto', 'on', 'off'];
+  const getEco = () => { const v = store.get('elongo.eco'); return ECOS.includes(v) ? v : 'auto'; };
+  const lowEnd = () => { const n = navigator, c = n.connection || {}; return !!((n.deviceMemory && n.deviceMemory <= 2) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2) || c.saveData || /^(slow-)?2g$|^3g$/.test(c.effectiveType || '')); };
+  const ecoOn = () => { const e = getEco(); return e === 'on' || (e === 'auto' && lowEnd()); };
+  const onWifi = () => { const c = navigator.connection; return !!(c && c.type === 'wifi'); };
+  function applyEco() { const r = document.documentElement; if (ecoOn()) r.setAttribute('data-eco', '1'); else r.removeAttribute('data-eco'); }
+  function setEco(e) { store.set('elongo.eco', e); applyEco(); }
+  // ----- foldable sections (organizer space, calendar list, chat help): the open/closed choice is kept on this device -----
+  const secState = () => { if (!ui.secs) { try { ui.secs = JSON.parse(store.get('elongo.sec') || '{}') || {}; } catch (e) { ui.secs = {}; } } return ui.secs; };
+  const secOpen = (key, def) => { const s = secState(); return s[key] === undefined ? !!def : !!s[key]; };
+  // Turns "<div><h3>Title</h3>…</div>" into a foldable section; `count` is a small badge next to the title.
+  const fold = (key, def, html, count) => {
+    const m = html.match(/^<div><h3>(.*?)<\/h3>([\s\S]*)<\/div>$/); if (!m) return html;
+    return `<details class="sec" data-sec="${key}"${secOpen(key, def) ? ' open' : ''}><summary><h3>${m[1]}</h3>${count ? `<b class="cnt">${count}</b>` : ''}</summary><div class="secbody">${m[2]}</div></details>`;
+  };
   const phoneSaysReduce = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => { if (getTheme() === 'auto') applyTheme(); }); }
 
@@ -562,7 +579,7 @@
         if ('IntersectionObserver' in window) { io = new IntersectionObserver(es => { seen = es[0].isIntersecting; }); io.observe(h); }
         if (!pts.length || Math.abs(W - h.clientWidth) > 8 || Math.abs(H - h.clientHeight) > 8) init();
         draw(performance.now());
-        if (!calm() && !raf) raf = requestAnimationFrame(loop);
+        if (!calm() && !ecoOn() && !raf) raf = requestAnimationFrame(loop);
       },
     };
   })();
@@ -1019,9 +1036,9 @@
     const list = '<ul class="list">' + S.members.map((m, r) => {
       const ov = S.out.get(r), isCur = r === D.cur, amtv = ov ? ov.amount : c.amount * D.n;
       const pill = ov ? '<span class="pill done">Reçu</span>' : isCur ? '<span class="pill now">En cours</span>' : '<span class="pill">À venir</span>';
-      return `<li class="row wrap calrow${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${!ov && isAdmin() ? `<button class="mini" data-act="swap" data-r="${r}">🔀 Changer</button>` : ''}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : 'Annuler la remise'}</button>` : ''}</li>`;
+      return `<li class="row wrap calrow${isCur ? ' cur' : ''}${me && m.id === me.id ? ' is-me' : ''}"><span class="rn num">${r + 1}</span><div class="grow"><div class="name">${memberLink(m)}</div><div class="sub">Du ${esc(fmtShort(roundStart(c, r)))} au ${esc(fmtShort(roundEnd(c, r)))} · ${money(amtv)}</div></div>${pill}${!ov && isAdmin() ? `<button class="mini" data-act="swap" data-r="${r}" aria-label="Changer le bénéficiaire du tour ${r + 1}" title="Changer le bénéficiaire">🔀</button>` : ''}${ov && isAdmin() ? `<button class="mini danger${ui.armed === 'unserve:' + m.id ? ' armed' : ''}" data-act="unserve" data-id="${esc(m.id)}">${ui.armed === 'unserve:' + m.id ? 'Confirmer' : '↩ Annuler'}</button>` : ''}</li>`;
     }).join('') + '</ul>';
-    return `<section class="panel calx"><h2>Calendrier des tours</h2>${nextCards}${calGrid(D)}</section><section class="panel" style="margin-top:14px"><h3>Tous les tours</h3>${list}</section>`;
+    return `<section class="panel calx"><h2>Calendrier des tours</h2>${nextCards}${calGrid(D)}</section><section class="panel" style="margin-top:14px">${fold('calall', false, '<div><h3>Tous les tours</h3>' + list + '</div>', D.n)}</section>`;
   }
 
   // ----- live matrix -----
@@ -1156,7 +1173,7 @@
       }).join('') : '<li class="hint">Aucun membre. Ajoutez le premier ci-dessous.</li>'}</ul>
       <form class="addrow" id="addForm"><input data-d="a.name" value="${esc(dv('a.name', ''))}" maxlength="40" placeholder="Nom du nouveau membre" aria-label="Nom du nouveau membre" required>
       <input data-d="a.phone" value="${esc(dv('a.phone', ''))}" class="ph" inputmode="tel" placeholder="Téléphone (facultatif)" aria-label="Téléphone du nouveau membre"><button class="primary" type="submit">Ajouter</button></form></div>`;
-    return `<section class="panel"><h2>Espace organisateur</h2><div class="adm">${invite}${reqs}${mem}${cfg}${exp}${del}</div></section>`;
+    return `<section class="panel"><h2>Espace organisateur</h2><div class="adm">${fold('invite', true, invite)}${fold('reqs', S.pending.length > 0, reqs, S.pending.length)}${fold('mem', true, mem, S.members.length)}${fold('cfg', false, cfg)}${fold('exp', false, exp)}${fold('del', false, del)}</div></section>`;
   }
 
   // ---------- Group chat ----------
@@ -1189,7 +1206,7 @@
       <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
     <input id="photoIn" type="file" accept="image/*,video/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
     <p class="hint" id="chatNote" hidden></p>
-    <p class="hint">📷 photo ou vidéo (appareil photo ou galerie : vidéo jusqu'à ${fmtSize(B.maxVideo)}, clips courts de préférence), 📎 PDF ou audio, 🎤 vocal : jusqu'à ${fmtSize(B.maxFile)}. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></section>`;
+    <details class="sec slim" data-sec="chathelp"${secOpen('chathelp', false) ? ' open' : ''}><summary>Aide : photos, vidéos et vocaux</summary><p class="hint">Bouton ＋ : photo ou vidéo (vidéo jusqu'à ${fmtSize(B.maxVideo)}, clips courts de préférence) ou document PDF / audio. Bouton 🎤 : message vocal. Jusqu'à ${fmtSize(B.maxFile)} par fichier. Les photos sont réduites avant l'envoi et s'affichent dans la discussion ; touchez-en une pour l'agrandir.</p></details></section>`;
   const dayLabel = ts => { const d = new Date(ts), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1); const same = (a, b) => a.toDateString() === b.toDateString();
     return same(d, t) ? "Aujourd'hui" : same(d, y) ? 'Hier' : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); };
   const clock = ts => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -1297,6 +1314,7 @@
   }
   // Photos of the open topic are fetched as soon as they are in the list (latest 12, one by one), so they show up without a tap.
   function autoLoadPhotos() {
+    if (ecoOn() && !onWifi()) return;   // economy mode: the "Afficher la photo" button stays
     const todo = S.msgs.filter(m => m.tp === ui.topic && m.att && m.att.kind === 'image' && !ui.att.has(m.att.path) && !ui.attBusy.has(m.att.path)).slice(-12);
     if (!todo.length) return;
     todo.forEach(m => ui.attBusy.add(m.att.path));   // a failed download is not retried in a loop: the "Afficher la photo" button stays
@@ -1486,6 +1504,11 @@
 
   // ---------- Actions ----------
   const eqPay = (round, member_id) => ({ tontine_id: S.tid, round: round + rb(), member_id });
+  document.addEventListener('click', ev => {
+    const sm = ev.target.closest('details[data-sec] > summary'); if (!sm) return;
+    const d = sm.parentNode, s = secState(); s[d.dataset.sec] = !d.open;   // the click is about to toggle it
+    store.set('elongo.sec', JSON.stringify(s));
+  });
   document.addEventListener('click', async ev => {
     const pm = $('plusMenu'); if (pm && !pm.hidden && !ev.target.closest('.plus')) { pm.hidden = true; $('plusBtn').setAttribute('aria-expanded', 'false'); }
     const b = ev.target.closest('button[data-act]'); if (!b) return;
@@ -1819,7 +1842,7 @@
     } catch (e) { toast(friendly(e)); }
   });
   $('themeBtn').addEventListener('click', () => { const t = THEMES[(THEMES.indexOf(getTheme()) + 1) % THEMES.length]; setTheme(t); toast('Thème ' + THEME_NAMES[t] + '.'); });
-  applyTheme(); applyMotion();
+  applyTheme(); applyMotion(); applyEco();
   $('userChip').addEventListener('click', () => {
     const m = $('modal'), body = $('modalBody');
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(shownId(S.user.email))}</p>
@@ -1827,6 +1850,8 @@
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : t === 'dark' ? '🌙 Sombre' : '⚫ Noir'}</button>`).join('')}</div>
       <h3 style="margin-top:12px">Animations</h3><div class="seg" role="group" aria-label="Animations">${MOTIONS.map(m => `<button type="button" data-m="motion:${m}" aria-pressed="${getMotion() === m}">${m === 'auto' ? 'Automatique' : m === 'on' ? '✨ Toujours' : '⏸ Réduites'}</button>`).join('')}</div>
+      <h3 style="margin-top:12px">Économie de données</h3><div class="seg" role="group" aria-label="Économie de données">${ECOS.map(m => `<button type="button" data-m="eco:${m}" aria-pressed="${getEco() === m}">${m === 'auto' ? 'Automatique' : m === 'on' ? '🌿 Activée' : 'Désactivée'}</button>`).join('')}</div>
+      <p class="hint">${getEco() === 'on' ? 'Activée : fond animé, effet verre et ciel coupés, photos téléchargées seulement sur Wi-Fi (sinon, touchez « Afficher la photo »).' : getEco() === 'off' ? 'Désactivée : tous les effets et le téléchargement automatique des photos.' : (lowEnd() ? 'Votre appareil ou votre connexion est jugé économe : le mode est actif.' : 'Le mode s\'active tout seul sur un téléphone modeste ou une connexion lente.')}</p>
       <p class="hint" id="motionHint">${phoneSaysReduce() && getMotion() === 'auto' ? 'Votre téléphone demande de réduire les animations (réglage « Supprimer les animations » ou économiseur de batterie) : Elongo les coupe. Choisissez « Toujours » pour les voir quand même.' : 'Automatique suit le réglage de votre téléphone.'}</p>
       ${pwSection()}
       ${lockSection()}
@@ -1836,6 +1861,7 @@
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal') && !ui.forcePw) $('modal').close(); return; }
     if (b.dataset.m.startsWith('theme:')) { setTheme(b.dataset.m.slice(6)); document.querySelectorAll('#modalBody [data-m^="theme:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'theme:' + getTheme()))); return; }
+    if (b.dataset.m.startsWith('eco:')) { setEco(b.dataset.m.slice(4)); document.querySelectorAll('#modalBody [data-m^="eco:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'eco:' + getEco()))); render(true); return; }
     if (b.dataset.m.startsWith('motion:')) { setMotion(b.dataset.m.slice(7)); document.querySelectorAll('#modalBody [data-m^="motion:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'motion:' + getMotion()))); render(true); return; }
     if (b.dataset.m.startsWith('nc')) { await ncAction(b.dataset.m); return; }
     if (b.dataset.m === 'pwform') { pwForm(false); return; }

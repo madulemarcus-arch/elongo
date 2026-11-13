@@ -616,3 +616,26 @@ table.mx thead th:last-child { background: var(--tint); }
 .tabbar a { font-size: .66rem; }
 .plusmenu { min-width: 250px; }
 .plusmenu button { min-height: 0; white-space: nowrap; padding: 10px 12px; font-size: .95rem; }
+
+/* Points 6 to 10 of the visual review: foldable sections, readable member names, economy mode. */
+details.sec { border-top: 1px solid var(--line); padding: 4px 0; }
+details.sec:first-child { border-top: 0; }
+details.sec > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 0; min-height: 44px; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::after { content: '›'; margin-left: auto; font-size: 1.5rem; line-height: 1; color: var(--muted); transition: transform .2s; }
+details.sec[open] > summary::after { transform: rotate(90deg); }
+details.sec > summary h3 { margin: 0; flex: 0 1 auto; }
+details.sec .cnt { font-size: .72rem; font-weight: 800; background: var(--tint); color: var(--accent); border-radius: 99px; padding: 2px 9px; }
+details.sec .secbody { padding-bottom: 12px; }
+details.sec.slim { border-top: 0; margin-top: 4px; }
+details.sec.slim > summary { min-height: 36px; padding: 6px 0; font-size: .85rem; font-weight: 600; color: var(--muted); }
+details.sec[open] .secbody { animation: rise .25s ease-out; }
+button.name-link::after { content: '›'; margin-left: 4px; font-weight: 800; opacity: .5; text-decoration: none; display: inline-block; }
+:root[data-eco="1"] body::before, :root[data-eco="1"] .hero::after { display: none; }
+:root[data-eco="1"] .tabbar, :root[data-eco="1"] .user-chip, :root[data-eco="1"] .topbar button { -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root[data-eco="1"] .tabbar { background: var(--surface); }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="on"]) details.sec[open] .secbody, :root:not([data-motion="on"]) details.sec > summary::after { animation: none; transition: none; } }
+:root[data-motion="off"] details.sec[open] .secbody, :root[data-motion="off"] details.sec > summary::after { animation: none; transition: none; }
+.row.calrow { flex-wrap: nowrap; }
+.row.calrow .grow { min-width: 0; }
+.row.calrow .pill, .row.calrow .mini { flex: none; }

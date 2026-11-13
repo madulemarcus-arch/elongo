@@ -25,6 +25,9 @@ const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream',
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true, permissions: ['microphone', 'notifications'], serviceWorkers: 'allow' });
 // Chromium cannot reach a real push service in a test: subscribing is faked, the rest of the flow is real.
 await ctx.addInitScript(() => {
+  try { if (!sessionStorage.getItem('e2e.init')) { sessionStorage.setItem('e2e.init', '1'); localStorage.setItem('elongo.sec', JSON.stringify({ invite: true, reqs: true, mem: true, cfg: true, exp: true, del: true, calall: true, chathelp: true })); localStorage.setItem('elongo.eco', 'off'); } } catch (e) {}
+});
+await ctx.addInitScript(() => {
   if (!window.PushManager) return;
   Object.defineProperty(Notification, 'permission', { get: () => 'granted' });   // headless Chromium reports 'denied' and shows no prompt
   Notification.requestPermission = async () => 'granted';
@@ -693,6 +696,27 @@ await A.click('[data-m="motion:auto"]');
 assert.equal(await A.evaluate(() => document.documentElement.hasAttribute('data-motion')), false);
 await A.keyboard.press('Escape');
 step('animations preference');
+
+// Foldable sections (organizer space, calendar list): defaults, memory on this device
+const ALLOPEN = JSON.stringify({ invite: true, reqs: true, mem: true, cfg: true, exp: true, del: true, calall: true, chathelp: true });
+await A.click('a[data-tab=organisateur]');
+await A.evaluate(() => localStorage.removeItem('elongo.sec')); await A.reload(); await A.waitForSelector('details[data-sec=cfg]');
+assert.deepEqual(await A.evaluate(() => [...document.querySelectorAll('details[data-sec]')].map(d => d.dataset.sec + ':' + d.open)), ['invite:true', 'reqs:false', 'mem:true', 'cfg:false', 'exp:false', 'del:false'], 'defaults: invite and members open, the rest folded');
+await A.click('details[data-sec=cfg] > summary'); await A.waitForSelector('#cfgForm');
+assert.equal(await A.evaluate(() => JSON.parse(localStorage.getItem('elongo.sec')).cfg), true, 'the choice is remembered');
+assert.equal(await A.evaluate(() => JSON.parse(localStorage.getItem('elongo.sec')).del), undefined, 'a default is never stored as a choice');
+await A.reload(); await A.waitForSelector('details[data-sec=cfg][open]');
+await A.evaluate(a => localStorage.setItem('elongo.sec', a), ALLOPEN); await A.reload(); await A.waitForSelector('details[data-sec=del][open]');
+// Economy mode
+await A.click('#userChip');
+assert.equal(await A.getAttribute('[data-m="eco:off"]', 'aria-pressed'), 'true', 'economy mode follows the test setting');
+await A.click('[data-m="eco:on"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-eco')), '1');
+assert.equal(await A.evaluate(() => getComputedStyle(document.body, '::before').display), 'none', 'economy: no drifting background');
+await A.click('[data-m="eco:off"]');
+assert.equal(await A.evaluate(() => document.documentElement.hasAttribute('data-eco')), false);
+await A.keyboard.press('Escape');
+step('foldable sections and economy mode');
 
 // Signing out removes this device from the notifications of that account
 await A.click('#userChip');
