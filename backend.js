@@ -116,7 +116,7 @@
     const now = () => new Date().toISOString();
     // New row = column defaults of schema.sql, overridden by the given values.
     const finish = (t, row) => {
-      const base = t === 'tontines' ? { id: uuid(), owner_id: must(), currency: 'FC', interval_days: 30, cycle: 1, cycle_base: 0, penalty: 0, reminder_days: 3, country_code: '243', join_open: true, code: Math.random().toString(36).slice(2, 10), created_at: now() }
+      const base = t === 'tontines' ? { id: uuid(), owner_id: must(), currency: 'FC', interval_days: 30, cycle: 1, cycle_base: 0, penalty: 0, reminder_days: 3, auto_remind: true, country_code: '243', join_open: true, code: Math.random().toString(36).slice(2, 10), created_at: now() }
         : t === 'members' ? { id: uuid(), position: 0, status: 'active', user_id: null, is_organizer: false, created_at: now() }
         : t === 'topics' ? { id: uuid(), author_id: must(), created_at: now(), closed: false }
         : t === 'messages' ? { id: uuid(), author_id: must(), created_at: now(), topic_id: null, body: '', att: null }

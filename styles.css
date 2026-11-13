@@ -210,7 +210,13 @@ dialog h2 { margin-bottom: 10px; }
 .invite-code { font-family: ui-monospace, monospace; font-size: 1.5rem; font-weight: 800; letter-spacing: .14em; color: var(--accent); background: var(--coin-tint); display: inline-block; padding: 6px 16px; border-radius: 12px; border: 1px dashed var(--coin); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .invite-code { color: var(--coin); } }
 :root[data-theme="dark"] .invite-code, :root[data-theme="black"] .invite-code { color: var(--coin); }
-@media (prefers-reduced-motion: reduce) { .toast { transition: none; } .dot, .live-dot, .rec { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .toast { transition: none; }
+  :root:not([data-motion="on"]) .dot, :root:not([data-motion="on"]) .live-dot, :root:not([data-motion="on"]) .rec { animation: none; }
+}
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .toast { transition: none; }
+:root[data-motion="off"] .dot, :root[data-motion="off"] .live-dot, :root[data-motion="off"] .rec { animation: none; }
 @media print { .topbar, .tabbar, .toast { display: none; } }
 
 /* Unlock code */
@@ -278,11 +284,16 @@ button:active:not(:disabled), .tabbar a:active { transform: scale(.95); }
 .confetti { position: absolute; top: -16px; width: 9px; height: 14px; border-radius: 2px; animation: fall var(--d, 2.4s) cubic-bezier(.3, .5, .6, 1) forwards; }
 @keyframes fall { to { transform: translate(var(--x, 0), 105vh) rotate(var(--r, 360deg)); } }
 @media (prefers-reduced-motion: reduce) {
-  #view.enter > *, .tabbar a.on > svg:first-child, .hero .coin { animation: none !important; }
-  .bar i, button, .tabbar a, .toast { transition: none !important; }
-  button:active:not(:disabled), .tabbar a:active { transform: none; }
-  .confetti-box { display: none; }
+  :root:not([data-motion="on"]) #view.enter > *, :root:not([data-motion="on"]) .tabbar a.on > svg:first-child, :root:not([data-motion="on"]) .hero .coin { animation: none !important; }
+  :root:not([data-motion="on"]) .bar i, :root:not([data-motion="on"]) button, :root:not([data-motion="on"]) .tabbar a, :root:not([data-motion="on"]) .toast { transition: none !important; }
+  :root:not([data-motion="on"]) button:active:not(:disabled), :root:not([data-motion="on"]) .tabbar a:active { transform: none; }
+  :root:not([data-motion="on"]) .confetti-box { display: none; }
 }
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] #view.enter > *, :root[data-motion="off"] .tabbar a.on > svg:first-child, :root[data-motion="off"] .hero .coin { animation: none !important; }
+:root[data-motion="off"] .bar i, :root[data-motion="off"] button, :root[data-motion="off"] .tabbar a, :root[data-motion="off"] .toast { transition: none !important; }
+:root[data-motion="off"] button:active:not(:disabled), :root[data-motion="off"] .tabbar a:active { transform: none; }
+:root[data-motion="off"] .confetti-box { display: none; }
 
 /* Compact Tour screen: one line per member, details in a sheet */
 .remind.compact { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: .9rem; }
@@ -393,7 +404,11 @@ button.eye:active:not(:disabled) { transform: translateY(-50%) scale(.92); }
 .replybox .rq span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
 @keyframes flashrow { 0%, 100% { background: transparent; } 30% { background: var(--coin-tint); } }
 .mrow.flash { animation: flashrow 1.4s ease-out; border-radius: 12px; }
-@media (prefers-reduced-motion: reduce) { .mrow.flash { animation: none; background: var(--coin-tint); } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .mrow.flash { animation: none; background: var(--coin-tint); }
+}
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .mrow.flash { animation: none; background: var(--coin-tint); }
 
 /* the reply button is a visible, labelled action (a small faded icon was easy to miss) */
 .msg .meta { flex-wrap: wrap; }
@@ -444,7 +459,11 @@ button.callme:active { transform: scale(.98); }
 .callbtn.on { background: #fff; color: #111; }
 @keyframes ringpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 157, 92, .55); } 50% { box-shadow: 0 0 0 16px rgba(31, 157, 92, 0); } }
 .callbtn.ok { animation: ringpulse 1.6s ease-out infinite; }
-@media (prefers-reduced-motion: reduce) { .callbtn.ok { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .callbtn.ok { animation: none; }
+}
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .callbtn.ok { animation: none; }
 
 /* New cycle: suggestions and a timeline of the turns */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -459,7 +478,11 @@ button.callme:active { transform: scale(.98); }
 .nctl li.last .dot { background: var(--accent); color: var(--accent-ink); }
 .nctl .mv { display: flex; gap: 4px; flex: none; }
 @keyframes ncin { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .nctl li { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .nctl li { animation: none; }
+}
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .nctl li { animation: none; }
 
 /* Hero card: animated sky behind the content, progress ring beside the pot */
 .hero > * { position: relative; z-index: 1; }
@@ -472,7 +495,11 @@ button.callme:active { transform: scale(.98); }
 .ring .rv { stroke: var(--coin); stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(.2, .8, .2, 1); filter: drop-shadow(0 0 5px rgba(244, 183, 63, .55)); }
 .ring b { font-size: 1.05rem; font-weight: 800; line-height: 1; margin-top: -8px; }
 .ring small { position: absolute; bottom: 17px; font-size: .58rem; opacity: .8; letter-spacing: .02em; }
-@media (prefers-reduced-motion: reduce) { .ring .rv { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .ring .rv { transition: none; }
+}
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .ring .rv { transition: none; }
 
 /* Tab icons in two tones: the outline follows the text colour, the detail (class tt) is gold; it draws itself when its tab opens */
 .ti .tt { stroke: var(--ic2); }
@@ -485,9 +512,12 @@ button.callme:active { transform: scale(.98); }
 @keyframes icpop { 0% { transform: scale(0); } 70% { transform: scale(1.35); } 100% { transform: scale(1); } }
 .badge:not([hidden]) { animation: pop .45s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .brand img, .tabbar a.on .tt, .badge { animation: none !important; }
-  .tabbar.go::before { transition: none; }
+  :root:not([data-motion="on"]) .brand img, :root:not([data-motion="on"]) .tabbar a.on .tt, :root:not([data-motion="on"]) .badge { animation: none !important; }
+  :root:not([data-motion="on"]) .tabbar.go::before { transition: none; }
 }
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] .brand img, :root[data-motion="off"] .tabbar a.on .tt, :root[data-motion="off"] .badge { animation: none !important; }
+:root[data-motion="off"] .tabbar.go::before { transition: none; }
 
 /* Step 3: lists and cards come alive. Rows and tiles rise one after the other when a screen opens, bars grow, each person has a colour. */
 .num, td, th { font-variant-numeric: tabular-nums; }
@@ -510,6 +540,15 @@ button.callme:active { transform: scale(.98); }
 .skel i:first-child { height: 190px; border-radius: 24px; } .skel i:last-child { height: 140px; }
 @keyframes shimmer { from { background-position: 120% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  #view.enter ul.list > li, #view.enter .kpis > .kpi, #view.enter .mbar i, .skel i { animation: none !important; }
-  .kpi, .av { transition: none; } .kpi:hover { transform: none; } .crow:hover .av { transform: none; }
+  :root:not([data-motion="on"]) #view.enter ul.list > li, :root:not([data-motion="on"]) #view.enter .kpis > .kpi, :root:not([data-motion="on"]) #view.enter .mbar i, :root:not([data-motion="on"]) .skel i { animation: none !important; }
+  :root:not([data-motion="on"]) .kpi, :root:not([data-motion="on"]) .av { transition: none; }
+  :root:not([data-motion="on"]) .kpi:hover { transform: none; }
+  :root:not([data-motion="on"]) .crow:hover .av { transform: none; }
 }
+/* same rules when the user chooses « Animations réduites » in Mon compte */
+:root[data-motion="off"] #view.enter ul.list > li, :root[data-motion="off"] #view.enter .kpis > .kpi, :root[data-motion="off"] #view.enter .mbar i, :root[data-motion="off"] .skel i { animation: none !important; }
+:root[data-motion="off"] .kpi, :root[data-motion="off"] .av { transition: none; }
+:root[data-motion="off"] .kpi:hover { transform: none; }
+:root[data-motion="off"] .crow:hover .av { transform: none; }
+
+/* Animations: data-motion="on" ignores the phone's "reduce motion" setting, "off" forces calm. */

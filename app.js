@@ -63,10 +63,18 @@
     }
   }
   function setTheme(t) { store.set('elongo.theme', t); applyTheme(); }
+  // ----- animations: automatic (follows the phone), always on, or reduced. Many phones switch animations off in battery saver or
+  // "Remove animations", which hides the whole design; « Toujours » lets the person keep them anyway. -----
+  const MOTIONS = ['auto', 'on', 'off'];
+  const getMotion = () => { const v = store.get('elongo.motion'); return MOTIONS.includes(v) ? v : 'auto'; };
+  function applyMotion() { const m = getMotion(), r = document.documentElement; if (m === 'auto') r.removeAttribute('data-motion'); else r.setAttribute('data-motion', m); }
+  function setMotion(m) { store.set('elongo.motion', m); applyMotion(); }
+  const motionReduced = () => { const m = getMotion(); return m === 'off' || (m === 'auto' && !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)); };
+  const phoneSaysReduce = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => { if (getTheme() === 'auto') applyTheme(); }); }
 
   // ----- life: vibration and confetti (both skipped when the phone asks for reduced motion) -----
-  const reduceMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const reduceMotion = () => motionReduced();
   const buzz = ms => { try { if (navigator.vibrate && !reduceMotion()) navigator.vibrate(ms); } catch (e) {} };
   function celebrate() {
     if (reduceMotion()) return;
@@ -506,7 +514,7 @@
 
   // ---------- Effects: animated sky, progress ring, climbing numbers ----------
   // Decorative only. Skipped when the phone asks for reduced motion (and in automated browsers, so tests read final values).
-  const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || !!navigator.webdriver;
+  const calm = () => motionReduced() || !!navigator.webdriver;
   // One canvas lives behind the hero card: a drifting network of points, twinkling gold stars and a glowing planet on an orbit.
   // It is moved into the new hero after every render, so a live update does not restart the animation.
   const sky = (() => {
@@ -1113,6 +1121,7 @@
       <p class="hint" id="prev-s" style="grid-column:1/-1">${esc(tourPreview(dv('s.start', c.start_date), dv('s.days', c.interval_days), S.members.length))}</p>
       <label class="f">Pénalité de retard (0 = aucune)<input data-d="s.pen" value="${esc(dv('s.pen', c.penalty))}" type="number" min="0" step="any"></label>
       <label class="f">Rappel (jours avant la date)<input data-d="s.rem" value="${esc(dv('s.rem', c.reminder_days))}" type="number" min="0" max="30" step="1"></label>
+      <div class="f">Rappels automatiques<label class="inl"><input type="checkbox" data-d="s.auto" ${dv('s.auto', c.auto_remind !== false) ? 'checked' : ''}> Prévenir chaque matin ceux qui n'ont pas versé</label></div>
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
@@ -1493,7 +1502,7 @@
       if (act === 'gotomsg') {
         const el = b.dataset.mid ? document.getElementById('m-' + b.dataset.mid) : null;
         if (!el) { toast('Ce message est plus ancien ou a été supprimé.'); return; }
-        el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        el.scrollIntoView({ block: 'center', behavior: motionReduced() ? 'auto' : 'smooth' });
         el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); return;
       }
       if (act === 'syncnow') { await syncQueue(); return; }
@@ -1748,7 +1757,7 @@
         } catch (e) { $('atErr').textContent = friendly(e); btn.disabled = false; }
       } else if (f.id === 'cfgForm') {
         const v = fv(f), g = k => v['s.' + k], c = S.cfg;
-        const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join') };
+        const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join'), auto_remind: !!g('auto') };
         if (!patch.name || !(patch.amount > 0) || !patch.start_date) return;
         await B.update('tontines', patch, { id: S.tid }); clearDraft('s.'); await loadTable('tontines'); render(); toast('Réglages enregistrés.');
       } else if (f.id === 'topicForm') {
@@ -1797,13 +1806,15 @@
     } catch (e) { toast(friendly(e)); }
   });
   $('themeBtn').addEventListener('click', () => { const t = THEMES[(THEMES.indexOf(getTheme()) + 1) % THEMES.length]; setTheme(t); toast('Thème ' + THEME_NAMES[t] + '.'); });
-  applyTheme();
+  applyTheme(); applyMotion();
   $('userChip').addEventListener('click', () => {
     const m = $('modal'), body = $('modalBody');
     body.innerHTML = `<h2>Mon compte</h2><p class="sub">${esc(shownId(S.user.email))}</p>
       ${S.tontines.length > 1 ? '<h3 style="margin-top:12px">Mes tontines</h3><ul class="list">' + S.tontines.map(t => `<li class="row"><div class="grow name">${esc(t.name)}</div>${t.id === S.tid ? '<span class="pill ok">Ouverte</span>' : `<button class="mini" data-m="open" data-id="${esc(t.id)}">Ouvrir</button>`}</li>`).join('') + '</ul>' : ''}
       ${ui.push.supported ? `<h3 style="margin-top:12px">Notifications</h3><p class="hint">${ui.push.subscribed ? 'Activées sur cet appareil : versements, remises de cagnotte et messages.' : ui.push.permission === 'denied' ? 'Bloquées par le navigateur. Autorisez-les dans les réglages du site.' : 'Désactivées sur cet appareil.'}</p>${ui.push.permission === 'denied' ? '' : ui.push.subscribed ? '<p><button class="mini" data-m="pushoff">Désactiver sur cet appareil</button></p>' : '<p><button class="mini primary" data-m="pushon">Activer les notifications</button></p>'}` : ''}
       <h3 style="margin-top:12px">Apparence</h3><div class="seg" role="group" aria-label="Thème">${THEMES.map(t => `<button type="button" data-m="theme:${t}" aria-pressed="${getTheme() === t}">${t === 'auto' ? 'Automatique' : t === 'light' ? '☀️ Clair' : t === 'dark' ? '🌙 Sombre' : '⚫ Noir'}</button>`).join('')}</div>
+      <h3 style="margin-top:12px">Animations</h3><div class="seg" role="group" aria-label="Animations">${MOTIONS.map(m => `<button type="button" data-m="motion:${m}" aria-pressed="${getMotion() === m}">${m === 'auto' ? 'Automatique' : m === 'on' ? '✨ Toujours' : '⏸ Réduites'}</button>`).join('')}</div>
+      <p class="hint" id="motionHint">${phoneSaysReduce() && getMotion() === 'auto' ? 'Votre téléphone demande de réduire les animations (réglage « Supprimer les animations » ou économiseur de batterie) : Elongo les coupe. Choisissez « Toujours » pour les voir quand même.' : 'Automatique suit le réglage de votre téléphone.'}</p>
       ${pwSection()}
       ${lockSection()}
       <div class="dlg-actions"><button data-m="new">Créer ou rejoindre une autre tontine</button><button class="danger" data-m="out">Se déconnecter</button><button data-m="close">Fermer</button></div>`;
@@ -1812,6 +1823,7 @@
   $('modal').addEventListener('click', async ev => {
     const b = ev.target.closest('button[data-m]'); if (!b) { if (ev.target === $('modal') && !ui.forcePw) $('modal').close(); return; }
     if (b.dataset.m.startsWith('theme:')) { setTheme(b.dataset.m.slice(6)); document.querySelectorAll('#modalBody [data-m^="theme:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'theme:' + getTheme()))); return; }
+    if (b.dataset.m.startsWith('motion:')) { setMotion(b.dataset.m.slice(7)); document.querySelectorAll('#modalBody [data-m^="motion:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === 'motion:' + getMotion()))); render(true); return; }
     if (b.dataset.m.startsWith('nc')) { await ncAction(b.dataset.m); return; }
     if (b.dataset.m === 'pwform') { pwForm(false); return; }
     if (b.dataset.m === 'pwsave') { await pwAction(); return; }

@@ -93,6 +93,18 @@ step('sign-up + tontine created, organizer space open');
 await A.fill(d$('s.pen'), '500');
 await A.click('#cfgForm button.primary');
 await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
+// Automatic reminders are on by default and can be switched off by the organizers
+assert.ok(await A.isChecked(d$('s.auto')), 'automatic reminders are on by default');
+assert.equal(await A.evaluate(() => JSON.parse(localStorage.getItem('lisanga.demo.v1')).tontines[0].auto_remind), true);
+await A.uncheck(d$('s.auto'));
+await A.click('#cfgForm button.primary');
+await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
+assert.equal(await A.evaluate(() => JSON.parse(localStorage.getItem('lisanga.demo.v1')).tontines[0].auto_remind), false, 'the switch is saved');
+assert.equal(await A.isChecked(d$('s.auto')), false);
+await A.check(d$('s.auto'));
+await A.click('#cfgForm button.primary');
+await A.waitForSelector('.toast.show:has-text("Réglages enregistrés")');
+assert.equal(await A.evaluate(() => JSON.parse(localStorage.getItem('lisanga.demo.v1')).tontines[0].auto_remind), true);
 await A.fill(d$('a.name'), 'Alice');
 await A.fill(d$('a.phone'), '0812345678');
 await A.click('#addForm button.primary');
@@ -659,6 +671,20 @@ await A.waitForSelector('.crow .av[style*="--h"]');
 assert.ok(await A.evaluate(() => { const h = [...document.querySelectorAll('.crow .av')].map(e => e.style.getPropertyValue('--h')); return h.length > 1 && new Set(h).size > 1; }), 'each member has an own colour');
 assert.ok(await A.evaluate(() => !document.querySelector('.skel')), 'no placeholder left once loaded');
 step('lists: embedded font, avatar colours');
+
+// Animations: automatic / always on (ignores the phone's "reduce motion") / reduced
+await A.click('#userChip');
+assert.equal(await A.getAttribute('[data-m="motion:auto"]', 'aria-pressed'), 'true', 'animations follow the phone by default');
+await A.click('[data-m="motion:on"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'on');
+assert.equal(await A.evaluate(() => localStorage.getItem('elongo.motion')), 'on');
+await A.click('[data-m="motion:off"]');
+assert.equal(await A.evaluate(() => document.documentElement.getAttribute('data-motion')), 'off');
+assert.equal(await A.evaluate(() => getComputedStyle(document.querySelector('.tabbar'), '::before').transitionDuration), '0s', 'reduced: the tab pill does not glide');
+await A.click('[data-m="motion:auto"]');
+assert.equal(await A.evaluate(() => document.documentElement.hasAttribute('data-motion')), false);
+await A.keyboard.press('Escape');
+step('animations preference');
 
 // Signing out removes this device from the notifications of that account
 await A.click('#userChip');
