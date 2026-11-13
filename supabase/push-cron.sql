@@ -1,4 +1,4 @@
--- Elongo : rappels quotidiens de cotisation par notification push.
+-- Elongo : rappels automatiques quotidiens de cotisation par notification push (chaque tontine peut les couper dans ses réglages).
 -- À exécuter UNE fois dans Supabase > SQL Editor, après avoir déployé la fonction « push » et défini ses secrets (voir README).
 -- Remplacez les trois valeurs entre < >. L'heure est en UTC : 07:00 UTC = 08:00 à Bandundu / Kinshasa.
 --

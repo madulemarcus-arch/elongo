@@ -1113,6 +1113,7 @@
       <p class="hint" id="prev-s" style="grid-column:1/-1">${esc(tourPreview(dv('s.start', c.start_date), dv('s.days', c.interval_days), S.members.length))}</p>
       <label class="f">Pénalité de retard (0 = aucune)<input data-d="s.pen" value="${esc(dv('s.pen', c.penalty))}" type="number" min="0" step="any"></label>
       <label class="f">Rappel (jours avant la date)<input data-d="s.rem" value="${esc(dv('s.rem', c.reminder_days))}" type="number" min="0" max="30" step="1"></label>
+      <div class="f">Rappels automatiques<label class="inl"><input type="checkbox" data-d="s.auto" ${dv('s.auto', c.auto_remind !== false) ? 'checked' : ''}> Prévenir chaque matin ceux qui n'ont pas versé</label></div>
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
@@ -1748,7 +1749,7 @@
         } catch (e) { $('atErr').textContent = friendly(e); btn.disabled = false; }
       } else if (f.id === 'cfgForm') {
         const v = fv(f), g = k => v['s.' + k], c = S.cfg;
-        const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join') };
+        const patch = { name: String(g('name')).trim(), amount: Number(g('amount')), currency: String(g('cur')).trim(), interval_days: Math.min(365, Math.max(1, Math.round(Number(g('days'))) || 30)), start_date: g('start'), penalty: Math.max(0, Number(g('pen')) || 0), reminder_days: Math.min(30, Math.max(0, Math.round(Number(g('rem'))) || 0)), country_code: String(g('cc')).replace(/\D/g, '') || '243', join_open: !!g('join'), auto_remind: !!g('auto') };
         if (!patch.name || !(patch.amount > 0) || !patch.start_date) return;
         await B.update('tontines', patch, { id: S.tid }); clearDraft('s.'); await loadTable('tontines'); render(); toast('Réglages enregistrés.');
       } else if (f.id === 'topicForm') {

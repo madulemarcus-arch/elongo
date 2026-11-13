@@ -23,9 +23,9 @@ const members = [
   { id: 'm2', tontine_id: 't1', name: 'Bob', user_id: BOB },
   { id: 'm3', tontine_id: 't1', name: 'Dora', user_id: null },   // no account: never notified
 ];
-const state = { recent: false, payments: [], payouts: [], messages: [], topics: [{ id: 'tp1', title: 'Retard de mars' }], subs: [], sent: [], today: '2026-10-08', dead: new Set() };
+const state = { journal: [], recent: false, payments: [], payouts: [], messages: [], topics: [{ id: 'tp1', title: 'Retard de mars' }], subs: [], sent: [], today: '2026-10-08', dead: new Set() };
 const sub = (user_id, endpoint) => ({ user_id, endpoint, p256dh: 'p', auth: 'a' });
-const reset = () => { Object.assign(state, { payments: [], payouts: [], messages: [], sent: [], today: '2026-10-08', dead: new Set(), subs: [sub(OWNER, 'e-owner'), sub(ALICE, 'e-alice'), sub(ALICE, 'e-alice-2'), sub(BOB, 'e-bob'), sub(OUTSIDER, 'e-out')] }); };
+const reset = () => { Object.assign(state, { journal: [], payments: [], payouts: [], messages: [], sent: [], today: '2026-10-08', dead: new Set(), subs: [sub(OWNER, 'e-owner'), sub(ALICE, 'e-alice'), sub(ALICE, 'e-alice-2'), sub(BOB, 'e-bob'), sub(OUTSIDER, 'e-out')] }); };
 const deps = () => ({
   cronSecret: 's3cret',
   today: () => state.today,
@@ -42,6 +42,9 @@ const deps = () => ({
   nameOfUser: async (t, uid) => (members.find(m => m.user_id === uid) || {}).name || '',
   subscriptionsFor: async ids => state.subs.filter(s => ids.includes(s.user_id)),
   deleteSubscription: async (u, e) => { state.subs = state.subs.filter(s => !(s.user_id === u && s.endpoint === e)); },
+  recentAuto: async (tid, since) => state.journal.some(j => j.text.startsWith('Rappel automatique') && j.at >= since),
+  addJournal: async (t, text) => { state.journal.push({ tid: t.id, by_id: t.owner_id, text, at: new Date(state.today + 'T08:00:00Z').toISOString() }); },
+  organizersOf: async () => new Set([OWNER, BOB]),
   listTontines: async () => [T],
   activeMembers: async () => members,
   payoutRounds: async () => state.payouts.map(p => p.round),
@@ -156,6 +159,37 @@ state.today = '2026-10-15';
 await call({ kind: 'reminders' }, { cron: 's3cret' });
 assert.match(state.sent[0].body, /\(tour 2\)\.$/);
 step('reminders');
+
+// ---------- automatic reminders: switch, journal, once a day, summary for the organizers ----------
+reset(); state.today = '2026-10-07';
+state.payments.push({ round: 0, member_id: 'm0', amount: 10000 }, { round: 0, member_id: 'm1', amount: 4000 });
+T.auto_remind = false;
+await call({ kind: 'reminders' }, { cron: 's3cret' });
+assert.equal(state.sent.length + state.journal.length, 0, 'auto_remind off: nobody is reminded, nothing is written');
+delete T.auto_remind;
+r = await j(await call({ kind: 'reminders' }, { cron: 's3cret' }));
+assert.equal(r.tontines, 1);
+assert.deepEqual(to(), ['e-alice', 'e-alice-2', 'e-bob'], 'before the date: members only, no summary for the organizers');
+assert.equal(state.journal.length, 1);
+assert.equal(state.journal[0].text, 'Rappel automatique : 2 membres prévenus par notification, 1 à relancer par WhatsApp (tour 1)');
+assert.equal(state.journal[0].by_id, OWNER, 'the journal line is attributed to the owner (by_id is not null)');
+state.sent = [];
+r = await j(await call({ kind: 'reminders' }, { cron: 's3cret' }));
+assert.equal(state.sent.length, 0, 'a second run the same day sends nothing');
+assert.equal(state.journal.length, 1);
+// two days late: members reminded, organizers get the summary
+state.today = '2026-10-12'; state.sent = [];
+await call({ kind: 'reminders' }, { cron: 's3cret' });
+const orga = state.sent.filter(s => s.tag && s.tag.startsWith('rappel-orga'));
+assert.deepEqual(orga.map(s => s.endpoint).sort(), ['e-bob', 'e-owner'], 'the organizers (not the members) get the summary');
+assert.equal(orga[0].body, "3 membres n'ont pas tout versé (tour 1), en retard de 2 jours ; 1 à relancer vous-même par WhatsApp.");
+assert.match(state.journal[1].text, /en retard de 2 jours/);
+assert.ok(state.sent.some(s => s.endpoint === 'e-alice' && /en retard de 2 jours/.test(s.body)), 'the late member is reminded too');
+// everybody paid: no summary, no journal line
+state.sent = []; state.journal = []; state.payments = [0, 1, 2, 3].map(i => ({ round: 0, member_id: 'm' + i, amount: 10000 }));
+await call({ kind: 'reminders' }, { cron: 's3cret' });
+assert.equal(state.sent.length + state.journal.length, 0);
+step('automatic reminders');
 
 // ---------- second cycle: round numbers in the database continue after the first cycle (cycle_base), screens count from 1 again ----------
 reset(); T.cycle_base = 3; T.start_date = '2026-11-01'; state.today = '2026-11-05';   // cycle 2, tour 1 = 1 to 8 Nov (database round 3)

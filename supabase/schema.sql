@@ -30,6 +30,9 @@ create table if not exists public.tontines (
 alter table public.tontines add column if not exists cycle int not null default 1 check (cycle >= 1);
 alter table public.tontines add column if not exists cycle_base int not null default 0 check (cycle_base >= 0);
 
+-- Rappels automatiques de cotisation (tâche planifiée, voir push-cron.sql) : les organisateurs peuvent les couper pour une tontine.
+alter table public.tontines add column if not exists auto_remind boolean not null default true;
+
 create table if not exists public.members (
   id          uuid primary key default gen_random_uuid(),
   tontine_id  uuid not null references public.tontines(id) on delete cascade,

@@ -243,6 +243,7 @@ insert into members (id, tontine_id, name, position) values
   ('00000000-0000-0000-0000-0000000000a2', current_setting('app.t3')::uuid, 'Deux', 2),
   ('00000000-0000-0000-0000-0000000000a3', current_setting('app.t3')::uuid, 'Trois', 3);
 select pg_temp.check('cycle: colonnes par défaut', (select cycle || '/' || cycle_base from tontines where id = current_setting('app.t3')::uuid) = '1/0');
+select pg_temp.check('rappels automatiques: actifs par défaut', (select auto_remind from tontines where id = current_setting('app.t3')::uuid));
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select pg_temp.fails('cycle: pas terminé', format('select new_cycle(%L, %L, array[%L,%L,%L]::uuid[])', current_setting('app.t3'), '2026-06-01',
   '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
@@ -271,3 +272,7 @@ select pg_temp.fails('cycle: déjà relancé (aucune remise dans le nouveau cycl
   '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'));
 reset role;
 select pg_temp.check('cycle: fermé à anon', not has_function_privilege('anon', 'public.new_cycle(uuid,date,uuid[])', 'execute'));
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
+update tontines set auto_remind = false where id = current_setting('app.t3')::uuid;
+select pg_temp.check('rappels automatiques: l''organisateur peut les couper', not (select auto_remind from tontines where id = current_setting('app.t3')::uuid));
+reset role;

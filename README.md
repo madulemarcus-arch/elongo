@@ -66,7 +66,7 @@ Après toute modification d'un fichier de l'appli, incrémentez `VERSION` dans `
 Les membres reçoivent une alerte sur leur téléphone, appli fermée, comme avec WhatsApp :
 - **versement** enregistré par l'organisateur (« Alice a versé 4 000 FC sur 10 000 FC »), et **cagnotte remise** ;
 - **nouveau message** dans la discussion ;
-- **rappel de cotisation** chaque matin (à 08:00) pour ceux qui n'ont pas fini de payer, à partir du nombre de jours réglé dans « Rappel » (et tant que c'est en retard).
+- **rappel automatique de cotisation** chaque matin (à 08:00) pour ceux qui n'ont pas fini de payer, à partir du nombre de jours réglé dans « Rappel » et tant que c'est en retard. Les organisateurs peuvent le couper pour leur tontine (réglages : case « Rappels automatiques »). Chaque envoi est inscrit au journal (« Rappel automatique : … »), jamais deux fois le même jour, et **à partir du jour de la date limite les organisateurs reçoivent un résumé** (combien manquent, depuis combien de jours, combien sont à relancer par WhatsApp parce qu'ils n'ont ni compte ni notification). Demande `supabase/push-cron.sql` (voir plus bas) ; **relancer `schema.sql`** (colonne `auto_remind`) et recoller la fonction `push`.
 
 Les relances individuelles des retardataires restent des liens WhatsApp (bouton « Relancer sur WhatsApp »).
 

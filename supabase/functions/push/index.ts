@@ -9,8 +9,9 @@
 //        { kind: 'call',     tontine_id, to }                 appel vocal : notifie le destinataire (appelant et destinataire membres de la tontine)
 //        { kind: 'remind',   tontine_id }                     rappel manuel aux membres qui n'ont pas tout versé (organisateur,
 //                                                             une fois toutes les 3 heures au plus ; répond qui a été prévenu et qui ne l'a pas pu)
-//   2. par la tâche planifiée de Supabase (pg_cron), avec l'en-tête x-cron-secret (facultatif, non utilisé en production) :
-//        { kind: 'reminders' }                                rappels de cotisation (une fois par jour)
+//   2. par la tâche planifiée de Supabase (pg_cron, voir supabase/push-cron.sql), avec l'en-tête x-cron-secret :
+//        { kind: 'reminders' }                                rappels automatiques de cotisation (une fois par jour, tontines dont auto_remind n'est pas désactivé ;
+//                                                             résumé aux organisateurs en cas de retard ou de membre injoignable ; inscrit au journal)
 //
 // Organisateur = créateur de la tontine ou membre actif nommé organisateur (members.is_organizer).
 // Secrets à définir dans Supabase (Edge Functions > Secrets) : VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, CRON_SECRET.
@@ -149,11 +150,15 @@ async function remindRound(deps: any, t: any, cur: number, days: number, members
   return out;
 }
 
-// Daily reminder (pg_cron, optional) for every member who has not paid the current round yet, from `reminder_days` before the date on.
+// Daily automatic reminder (pg_cron) for every member who has not paid the current round yet, from `reminder_days` before the date on.
+// A tontine whose organizers switched `auto_remind` off is skipped; a tontine reminded less than 20 hours ago (journal) is skipped too, so a
+// second run the same day sends nothing. The run is written to the journal, and from the due date on the organizers get a short summary
+// (how many are missing, how many are late, how many cannot be reached by notification and must be reminded by WhatsApp).
 async function reminders(deps: any) {
   const total = { sent: 0, failed: 0, removed: 0, tontines: 0 };
   const today: string = deps.today();
   for (const t of await deps.listTontines()) {
+    if (t.auto_remind === false) continue;
     const members = await deps.activeMembers(t.id);
     if (!members.length) continue;
     const served = new Set(await deps.payoutRounds(t.id));
@@ -161,9 +166,23 @@ async function reminders(deps: any) {
     if (cur >= members.length) continue;
     const days = dayDiff(addDays(t.start_date, (cur + 1) * t.interval_days), today);   // a round of N days ends N days after it starts
     if (days > Number(t.reminder_days)) continue;
-    total.tontines++;
+    if (deps.recentAuto) { let again = false; try { again = !!(await deps.recentAuto(t.id, new Date(Date.parse(today + 'T12:00:00Z') - 20 * 3600 * 1000).toISOString())); } catch { /* journal not available: no guard */ } if (again) continue; }
     const r = await remindRound(deps, t, cur, days, members);
+    if (!r.owing) continue;
+    total.tontines++;
     total.sent += r.sent; total.failed += r.failed; total.removed += r.removed;
+    const late = days < 0, hard = r.unreachable.length;
+    const text = `Rappel automatique : ${r.notified} membre${r.notified > 1 ? 's' : ''} prévenu${r.notified > 1 ? 's' : ''} par notification`
+      + (hard ? `, ${hard} à relancer par WhatsApp` : '') + ` (tour ${cur + 1}${late ? `, en retard de ${-days} jour${days < -1 ? 's' : ''}` : ''})`;
+    if (deps.addJournal) { try { await deps.addJournal(t, text); } catch { /* journal not available */ } }
+    if (days <= 0 && deps.organizersOf) {   // due today or late: tell the organizers who is still missing
+      try {
+        const orgs: Set<string> = await deps.organizersOf(t.id);
+        const body = `${r.owing} membre${r.owing > 1 ? 's' : ''} n'ont pas tout versé (tour ${cur + 1})`
+          + (late ? `, en retard de ${-days} jour${days < -1 ? 's' : ''}` : '') + (hard ? ` ; ${hard} à relancer vous-même par WhatsApp.` : '.');
+        await deliver(deps, { title: t.name, body, url: './#/tour', tag: `rappel-orga-${t.id}-${cur}` }, orgs);
+      } catch { /* the members were reminded; the summary is a bonus */ }
+    }
   }
   return total;
 }
@@ -191,6 +210,14 @@ if (D && D.serve) {
       getMessage: (id: string) => one(admin.from('messages').select('*').eq('id', id).maybeSingle()),
       getTopic: (id: string) => one(admin.from('topics').select('title').eq('id', id).maybeSingle()),
       isOrganizer: async (t: any, uid: string) => t.owner_id === uid || !!(await one(admin.from('members').select('id').eq('tontine_id', t.id).eq('user_id', uid).eq('status', 'active').eq('is_organizer', true).maybeSingle())),
+      recentAuto: async (tid: string, since: string) => { const { data, error } = await admin.from('journal').select('id').eq('tontine_id', tid).like('text', 'Rappel automatique%').gte('created_at', since).limit(1); if (error) return false; return (data || []).length > 0; },
+      addJournal: async (t: any, text: string) => { const { error } = await admin.from('journal').insert({ tontine_id: t.id, by_id: t.owner_id, by_name: 'Rappel automatique', text: text.slice(0, 300) }); if (error) throw error; },
+      organizersOf: async (tid: string) => {
+        const t = await one(admin.from('tontines').select('owner_id').eq('id', tid).maybeSingle());
+        const ms = await rows(admin.from('members').select('user_id').eq('tontine_id', tid).eq('status', 'active').eq('is_organizer', true).not('user_id', 'is', null));
+        const set = new Set<string>(ms.map((r: any) => r.user_id)); if (t) set.add(t.owner_id);
+        return set;
+      },
       recentReminder: async (tid: string, since: string) => { const { data, error } = await admin.from('journal').select('id').eq('tontine_id', tid).like('text', 'Rappel envoyé%').gte('created_at', since).limit(1); if (error) return false; return (data || []).length > 0; },
       nameOfUser: async (tid: string, uid: string) => { const m = await one(admin.from('members').select('name').eq('tontine_id', tid).eq('user_id', uid).maybeSingle()); return m ? m.name : ''; },
       audience: async (tid: string) => {
