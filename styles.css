@@ -87,7 +87,7 @@ button:disabled { opacity: .5; cursor: default; }
 button.mini { padding: 5px 12px; font-size: .85rem; border-radius: 10px; }
 button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; font-weight: 500; font-size: .8rem; box-shadow: none; }
 a.lnk { display: inline-block; text-decoration: none; font-weight: 600; border-radius: 10px; border: 1px solid var(--accent); color: var(--accent); padding: 5px 12px; font-size: .85rem; margin-top: 4px; }
-label.f { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); font-weight: 600; }
+label.f, div.f { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); font-weight: 600; }
 form.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); align-items: end; }
 .inl { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: 1rem; padding: 8px 0; font-weight: 500; }
 .inl input { width: 18px; height: 18px; padding: 0; }
@@ -600,3 +600,19 @@ input:focus, select:focus, textarea:focus { transition: box-shadow .18s, border-
 :root[data-motion="off"] #view.enter .cd, :root[data-motion="off"] .mrow.fresh .msg, :root[data-motion="off"] .empty, :root[data-motion="off"] .empty h2, :root[data-motion="off"] .pill.late, :root[data-motion="off"] .pill.warn { animation: none !important; }
 :root[data-motion="off"] .row[data-act], :root[data-motion="off"] .chip, :root[data-motion="off"] .kpi, :root[data-motion="off"] .panel, :root[data-motion="off"] .panel .mini, :root[data-motion="off"] input, :root[data-motion="off"] select, :root[data-motion="off"] textarea { transition: none !important; }
 :root[data-motion="off"] .row[data-act]:active, :root[data-motion="off"] .kpi:active { transform: none; }
+
+/* Corrections after the visual review: sticky name and total columns in the live table, a single « + » for attachments, a clear partial payout. */
+table.mx th, table.mx td { padding: 9px 8px; }
+table.mx th:first-child, table.mx td:first-child { max-width: 6.8rem; box-shadow: 6px 0 8px -6px rgba(8, 14, 34, .22); z-index: 1; }
+table.mx th:last-child, table.mx td:last-child { position: sticky; right: 0; background: var(--surface); box-shadow: -6px 0 8px -6px rgba(8, 14, 34, .22); z-index: 1; }
+table.mx thead th:last-child { background: var(--tint); }
+.composer .plus { position: relative; display: inline-flex; }
+.plusmenu { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 6; display: grid; gap: 4px; min-width: 214px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 28px rgba(8, 14, 34, .22); animation: rise .2s ease-out; }
+.plusmenu[hidden] { display: none; }
+.plusmenu button { text-align: left; justify-content: flex-start; background: transparent; border-color: transparent; box-shadow: none; font-weight: 600; padding: 11px 12px; }
+.plusmenu button:active { background: var(--tint); }
+.hero button.partial { background: transparent; color: var(--coin); border-color: var(--coin); white-space: normal; text-align: left; }
+.hero button.armed { white-space: normal; text-align: left; }
+.tabbar a { font-size: .66rem; }
+.plusmenu { min-width: 250px; }
+.plusmenu button { min-height: 0; white-space: nowrap; padding: 10px 12px; font-size: .95rem; }

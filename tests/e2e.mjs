@@ -537,7 +537,7 @@ step('chat topics + live messages + unread badge + reply to a message');
 
 // Attachments: photo, PDF, voice
 const png = await readFile(join(root, 'icons/icon-192.png'));
-await Bp.click('[data-act=pickphoto]');   // the camera/gallery button has its own input
+await Bp.click('[data-act=plus]'); await Bp.click('[data-act=pickphoto]');   // the camera/gallery button has its own input
 await Bp.setInputFiles('#photoIn', { name: 'preuve.png', mimeType: 'image/png', buffer: png });
 await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("preuve.jpg")');
 await Bp.fill('#chatIn', 'Preuve de paiement');
@@ -555,10 +555,10 @@ await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("vocal-")');
 await Bp.click('#chatSend');
 await Bp.waitForSelector('.msg.me:has-text(".webm")');
 // Video: shown behind a "play" button (not downloaded automatically), and refused when too heavy
-await Bp.click('[data-act=pickphoto]');
+await Bp.click('[data-act=plus]'); await Bp.click('[data-act=pickphoto]');
 await Bp.setInputFiles('#photoIn', { name: 'gros.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2_000_000) });
 await Bp.waitForSelector('#toast.show:has-text("Vidéo trop lourde")');
-await Bp.click('[data-act=pickphoto]');
+await Bp.click('[data-act=plus]'); await Bp.click('[data-act=pickphoto]');
 await Bp.setInputFiles('#photoIn', { name: 'clip.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(40_000, 7) });
 await Bp.waitForSelector('#pendingBox:not([hidden]):has-text("clip.mp4")');
 await Bp.click('#chatSend');
@@ -671,6 +671,9 @@ await A.waitForSelector('.crow .av[style*="--h"]');
 assert.ok(await A.evaluate(() => { const h = [...document.querySelectorAll('.crow .av')].map(e => e.style.getPropertyValue('--h')); return h.length > 1 && new Set(h).size > 1; }), 'each member has an own colour');
 assert.ok(await A.evaluate(() => !document.querySelector('.skel')), 'no placeholder left once loaded');
 step('lists: embedded font, avatar colours');
+assert.deepEqual(await A.evaluate(() => [...document.querySelectorAll('#tabbar a')].filter(a => !a.hidden).map(a => a.textContent.trim().replace(/\d+$/, ''))), ['Accueil', 'Tour', 'Calendrier', 'Direct', 'Chat', 'Gérer'], 'short tab labels that do not touch');
+assert.equal(await A.getAttribute('#tabbar a[data-tab=discussion]', 'aria-label'), 'Discussion', 'the full name stays for screen readers');
+assert.match(await A.textContent('[data-act=payout]'), /sur [\d\s\u202f\u00a0]+FC/, 'an incomplete pot says how much is missing from the total');
 
 // Animations: automatic / always on (ignores the phone's "reduce motion") / reduced
 await A.click('#userChip');

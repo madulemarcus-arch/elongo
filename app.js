@@ -584,6 +584,13 @@
     });
   }
 
+  // Evolution table: when it is wider than the screen, scroll so that the current round (gold column) is visible next to the names.
+  function liveScroll() {
+    const w = document.querySelector('#view .mxwrap'); if (!w) return;
+    if (ui.liveLeft === undefined) { const cc = w.querySelector('thead th.cc'), first = w.querySelector('th:first-child'); ui.liveLeft = cc ? Math.max(0, cc.offsetLeft - (first ? first.offsetWidth : 0) - 8) : 0; }
+    w.scrollLeft = ui.liveLeft;
+    w.addEventListener('scroll', () => { ui.liveLeft = w.scrollLeft; }, { passive: true });   // a live update redraws the table: keep where the person scrolled to
+  }
   // Placeholder shown while the data loads: a few blocks that shimmer (the word stays for screen readers).
   const skeleton = () => '<div class="skel" role="status" aria-label="Chargement…"><i></i><i></i><i></i></div>';
 
@@ -600,7 +607,7 @@
     else view = TABS.includes(r) ? r : 'bord';
     if (view === 'organisateur' && !isAdmin()) view = 'bord';
     const changed = S.view !== view;
-    if (changed) { ui.armed = ''; ui.copyText = ''; ui.rendered = ''; ui.counts = {}; ui.ringPct = 0; }
+    if (changed) { ui.armed = ''; ui.copyText = ''; ui.rendered = ''; ui.counts = {}; ui.ringPct = 0; ui.liveLeft = undefined; }
     S.view = view;
     if (soft === true && !changed && ['auth', 'welcome', 'join'].includes(view)) return;   // data changes do not concern these forms
     if (view === 'join' && (changed || !soft)) loadPreview(arg);
@@ -634,7 +641,7 @@
       document.querySelectorAll('#view .bar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; ui.potPct = Number(i.dataset.w); });
       document.querySelectorAll('#view .ring .rv').forEach(c => { c.style.strokeDashoffset = (Number(c.dataset.c) * (1 - Number(c.dataset.p) / 100)).toFixed(1); ui.ringPct = Number(c.dataset.p); });
     });
-    v.querySelectorAll('.hero').forEach(sky.attach); countUps();
+    v.querySelectorAll('.hero').forEach(sky.attach); countUps(); liveScroll();
     if (keep) {
       const x = [...v.querySelectorAll('input,textarea')].find(el => focusKey(el) === keep.k);
       if (x) { x.focus({ preventScroll: true }); if (x.value !== keep.value && x.type !== 'checkbox') x.value = keep.value; try { x.setSelectionRange(keep.s, keep.e); } catch (e) {} }
@@ -729,7 +736,7 @@
         else if (dd <= c.reminder_days) remind = `<div class="remind"><b>Rappel :</b> il vous reste ${money(rest)} à verser, attendu ${esc(rel(due))} (${esc(fmtShort(due))}).</div>`;
       }
     }
-    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Confirmer, il manque ${miss} cotisation${miss > 1 ? 's' : ''}` : 'Confirmer la remise') : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
+    const act = isAdmin() ? `<div class="actions"><button data-act="payout" class="${ui.armed === 'payout' ? 'armed' : miss ? 'partial' : ''}">${ui.armed === 'payout' ? (got === 0 ? 'Confirmer : rien encaissé' : miss ? `Cagnotte incomplète : il manque ${money(pot - got)}. Confirmer la remise de ${money(got)} ?` : 'Confirmer la remise') : miss ? 'Remettre ' + money(got) + ' sur ' + money(pot) + ' à ' + esc(D.benef.name) : 'Remettre ' + money(got) + ' à ' + esc(D.benef.name)}</button>`
       + `<button type="button" class="primary" data-act="quickpay">➕ Enregistrer un versement</button>`
       + `<button type="button" class="ghost" data-act="swap" data-r="${D.cur}">🔀 Changer de bénéficiaire</button>`
       + (D.cur > 0 ? undoBtn(D, 'ghost') : '') + '</div>' : '';
@@ -1122,7 +1129,7 @@
       <p class="hint" id="prev-s" style="grid-column:1/-1">${esc(tourPreview(dv('s.start', c.start_date), dv('s.days', c.interval_days), S.members.length))}</p>
       <label class="f">Pénalité de retard (0 = aucune)<input data-d="s.pen" value="${esc(dv('s.pen', c.penalty))}" type="number" min="0" step="any"></label>
       <label class="f">Rappel (jours avant la date)<input data-d="s.rem" value="${esc(dv('s.rem', c.reminder_days))}" type="number" min="0" max="30" step="1"></label>
-      <div class="f">Rappels automatiques<label class="inl"><input type="checkbox" data-d="s.auto" ${dv('s.auto', c.auto_remind !== false) ? 'checked' : ''}> Prévenir chaque matin ceux qui n'ont pas versé</label></div>
+      <div class="f" style="grid-column:1/-1">Rappels automatiques<label class="inl"><input type="checkbox" data-d="s.auto" ${dv('s.auto', c.auto_remind !== false) ? 'checked' : ''}> Prévenir chaque matin ceux qui n'ont pas versé</label></div>
       <div class="f">Inscriptions<label class="inl"><input type="checkbox" data-d="s.join" ${dv('s.join', c.join_open) ? 'checked' : ''}> Autoriser les demandes</label></div>
       <label class="f">Indicatif pays (WhatsApp)<input data-d="s.cc" value="${esc(dv('s.cc', c.country_code))}" inputmode="numeric" maxlength="4"></label>
       <button class="primary" type="submit">Enregistrer</button></form></div>`;
@@ -1176,7 +1183,8 @@
     <div id="chatlog" class="chatlog" role="log" aria-live="polite" tabindex="0"></div>
     <div id="replyBox" class="pendbox replybox" hidden></div>
     <div id="pendingBox" class="pendbox" hidden></div>
-    <form id="chatForm" class="composer"><button type="button" class="ico" data-act="pickphoto" aria-label="Partager une photo ou une vidéo (appareil photo ou galerie)" title="Photo ou vidéo">📷</button><button type="button" class="ico" data-act="pickfile" aria-label="Joindre un audio ou un PDF" title="Joindre un document">📎</button>
+    <form id="chatForm" class="composer"><span class="plus"><button type="button" class="ico" data-act="plus" id="plusBtn" aria-label="Joindre une photo, une vidéo ou un document" aria-expanded="false" title="Joindre">＋</button>
+        <span class="plusmenu" id="plusMenu" hidden><button type="button" data-act="pickphoto">📷 Photo ou vidéo</button><button type="button" data-act="pickfile">📎 Document ou audio</button></span></span>
       <input id="chatIn" maxlength="1000" autocomplete="off" placeholder="Écrire un message" aria-label="Votre message">
       <button type="button" class="ico" id="recBtn" data-act="voice" aria-label="Enregistrer un vocal" title="Vocal">🎤</button><button class="ico send" type="submit" id="chatSend" aria-label="Envoyer" title="Envoyer">➤</button></form>
     <input id="photoIn" type="file" accept="image/*,video/*" hidden><input id="fileIn" type="file" accept="image/*,audio/*,application/pdf" hidden><input id="voiceIn" type="file" accept="audio/*" capture hidden>
@@ -1479,6 +1487,7 @@
   // ---------- Actions ----------
   const eqPay = (round, member_id) => ({ tontine_id: S.tid, round: round + rb(), member_id });
   document.addEventListener('click', async ev => {
+    const pm = $('plusMenu'); if (pm && !pm.hidden && !ev.target.closest('.plus')) { pm.hidden = true; $('plusBtn').setAttribute('aria-expanded', 'false'); }
     const b = ev.target.closest('button[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
     try {
@@ -1512,7 +1521,8 @@
       if (act === 'journalmore') { ui.journalAll = !ui.journalAll; render(); return; }
       if (act === 'showpw') { const i = document.querySelector('#authForm input[name=password]'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'); b.classList.toggle('on', show); return; }
       if (act === 'newtopic') { ui.newTopic = !ui.newTopic; renderChatParts(); if (ui.newTopic) $('topicIn').focus(); return; }
-      if (act === 'pickfile') { $('fileIn').click(); return; }
+      if (act === 'plus') { const m = $('plusMenu'); m.hidden = !m.hidden; $('plusBtn').setAttribute('aria-expanded', String(!m.hidden)); return; }
+      if (act === 'pickfile') { $('plusMenu').hidden = true; $('fileIn').click(); return; }
       if (act === 'zoomimg') {
         const m = S.msgs.find(x => x.id === b.dataset.mid), v = m && m.att && ui.att.get(m.att.path); if (!v) return;
         $('modalBody').innerHTML = `<h2>Photo de ${esc(m.author_name)}</h2><p class="sub">${esc(fmtTime(m.ts))}</p><img class="zoomimg" src="${v.url}" alt="${esc(m.att.name)}"><div class="dlg-actions"><a class="lnk" href="${v.url}" download="${esc(m.att.name)}">Enregistrer la photo</a><button type="button" data-m="close">Fermer</button></div>`;
@@ -1532,7 +1542,7 @@
         renderCall(); return;
       }
       if (act === 'callmute') { const c = callSt; if (c && c.stream) { c.muted = !c.muted; c.stream.getAudioTracks().forEach(t => { t.enabled = !c.muted; }); renderCall(); } return; }
-      if (act === 'pickphoto') { $('photoIn').click(); return; }
+      if (act === 'pickphoto') { $('plusMenu').hidden = true; $('photoIn').click(); return; }
       if (act === 'member') { memberDialog(id); return; }
       if (act === 'pushon') { await enablePush(); return; }
       if (act === 'pushlater') { store.set('lisanga.pushlater', '1'); render(); return; }
