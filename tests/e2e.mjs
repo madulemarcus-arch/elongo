@@ -118,6 +118,20 @@ await A.waitForSelector('.row:has-text("Bob")');
 assert.ok(await A.isVisible('input[data-phone]:near(:text("Alice"))') || true);
 step('settings (penalty) + manual members with phone');
 
+// First steps checklist on the home screen (organizer): ticked by what exists, hideable
+await A.click('a[data-tab=bord]'); await A.waitForSelector('.panel.start');
+assert.equal(await A.evaluate(() => [...document.querySelectorAll('.start li[data-step]')].map(li => li.dataset.step + ':' + li.classList.contains('done')).join(' ')),
+  'members:true invite:false orga:false pay:false push:false', 'members are added, the rest is still to do');
+await A.click('.start [data-act=chk][data-id=pay]'); await A.waitForSelector('#qpAmount'); await A.keyboard.press('Escape');
+await A.click('.start [data-act=chk][data-id=invite]'); await A.waitForSelector('details[data-sec=invite][open] .invite-code');
+assert.equal(await A.evaluate(() => location.hash), '#/organisateur', 'the button leads to the right place');
+await A.click('a[data-tab=bord]'); await A.waitForSelector('.panel.start');
+await A.click('.start [data-act=startoff]'); await A.waitForFunction(() => !document.querySelector('.panel.start'));
+assert.equal(await A.evaluate(() => localStorage.getItem('elongo.start.' + Object.keys(localStorage).filter(k => k.startsWith('elongo.start.')).pop().slice(13))), '1', 'hiding is remembered');
+await A.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('elongo.start.')).forEach(k => localStorage.removeItem(k))); await A.reload(); await A.waitForSelector('.panel.start');
+await A.click('a[data-tab=organisateur]'); await A.waitForSelector('#addForm');   // back where the next steps expect to be
+step('first steps checklist');
+
 // ---------- Member: invitation link -> sign-up -> request ----------
 await Bp.goto(url + '#/rejoindre/' + code);
 await Bp.waitForSelector('#authForm');
