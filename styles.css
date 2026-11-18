@@ -646,3 +646,26 @@ button.name-link::after { content: '›'; margin-left: 4px; font-weight: 800; op
 .start .chk { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--tint); font-size: 1.05rem; }
 .start li.done .chk { background: var(--ok-tint); color: var(--ok); font-weight: 800; }
 .start li.done .name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* Keypad for the unlock code (dots that fill, round keys, shake on error), same family as CISPOLstore Manager */
+.pdots { display: flex; gap: 16px; justify-content: center; margin: 6px 0 2px; }
+.pdots i { display: block; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .85); transition: background .12s, transform .12s; }
+.pdots i.f { background: var(--coin); border-color: var(--coin); transform: scale(1.12); }
+.pdots.shake { animation: shake .35s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.keypad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 16px; justify-content: center; margin: 8px 0 4px; }
+.keypad button, .lockbox .keypad button { width: 72px; height: 72px; min-height: 0; padding: 0; border-radius: 50%; border: 0; box-shadow: none; background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.7rem; font-weight: 500; transition: background .12s, transform .1s; }
+.keypad button:active { background: rgba(255, 255, 255, .3); transform: scale(.94); }
+.ptxt, .lockbox input.ptxt { position: absolute; opacity: 0; width: 1px; height: 1px; padding: 0; border: 0; pointer-events: none; }
+.lockbox .lk { width: auto; background: none; border: 0; box-shadow: none; color: #fff; text-decoration: underline; opacity: .85; font-weight: 500; }
+.pindlg { display: grid; justify-items: center; text-align: center; }
+dialog .pdots i { border-color: var(--accent); }
+dialog .pdots i.f { background: var(--accent); border-color: var(--accent); }
+dialog .keypad button { background: var(--tint); color: var(--ink); }
+dialog .keypad button:active { background: var(--coin-tint); }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .pdots.shake { animation: none; }
+  :root:not([data-motion="on"]) .pdots i, :root:not([data-motion="on"]) .keypad button { transition: none; }
+}
+:root[data-motion="off"] .pdots.shake { animation: none; }
+:root[data-motion="off"] .pdots i, :root[data-motion="off"] .keypad button { transition: none; }
