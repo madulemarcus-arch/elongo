@@ -1076,11 +1076,44 @@
   }
 
   // ----- home: a summary of everything going on in the tontine -----
+  // ----- first steps for organizers: a short checklist at the top of the home screen. Steps are ticked by what really exists (members, accounts,
+  // versements...), never by a click; the whole card can be hidden, and it disappears by itself once everything is done. -----
+  function startSteps() {
+    const c = S.cfg, orgs = new Set([c.owner_id, ...S.members.filter(m => m.is_organizer && m.user_id && m.status === 'active').map(m => m.user_id)]);
+    let paid = false; S.pay.forEach(v => { if (Number(v.amount) > 0) paid = true; });
+    const members = S.members.length >= 2;
+    const steps = [
+      { k: 'members', ic: '👥', t: 'Ajouter les membres', sub: "Les personnes qui cotisent, dans l'ordre de passage.", done: members, btn: 'Ajouter' },
+      { k: 'invite', ic: '🔗', t: "Inviter les membres sur l'appli", sub: 'Par WhatsApp : chacun suit la tontine sur son téléphone.', done: S.members.some(m => m.user_id && m.user_id !== c.owner_id) || S.pending.length > 0, btn: 'Inviter' },
+      { k: 'orga', ic: '🛡️', t: 'Nommer un second organisateur', sub: 'Pour réinitialiser votre mot de passe si vous l\'oubliez.', done: orgs.size >= 2, btn: 'Nommer' },
+      { k: 'pay', ic: '💸', t: 'Enregistrer le premier versement', sub: 'Le montant reçu d\'un membre, avec le moyen de paiement.', done: paid, btn: members ? 'Enregistrer' : '' },
+    ];
+    if (ui.push.supported && ui.push.permission !== 'denied') steps.push({ k: 'push', ic: '🔔', t: 'Activer les notifications', sub: 'Versements, remises et messages, même appli fermée.', done: ui.push.subscribed, btn: 'Activer' });
+    return steps;
+  }
+  function startCard() {
+    if (!isAdmin() || !S.cfg || store.get('elongo.start.' + S.tid) === '1') return '';
+    const steps = startSteps(), done = steps.filter(s => s.done).length;
+    if (done === steps.length) return '';
+    return `<section class="panel start" aria-label="Premiers pas"><div class="chead"><h2>Premiers pas</h2><span class="pill">${done}/${steps.length}</span></div>
+      <div class="mbar" aria-hidden="true"><i style="width:${Math.round(100 * done / steps.length)}%"></i></div>
+      <ul class="list">${steps.map(s => `<li class="row wrap${s.done ? ' done' : ''}" data-step="${s.k}"><span class="chk" aria-hidden="true">${s.done ? '✓' : s.ic}</span><div class="grow"><div class="name">${s.t}</div>${s.done ? '' : `<div class="sub">${s.sub}</div>`}</div>${s.done ? '<span class="pill ok">Fait</span>' : s.btn ? `<button type="button" class="mini primary" data-act="chk" data-id="${s.k}">${s.btn}</button>` : ''}</li>`).join('')}</ul>
+      <p style="margin:10px 0 0"><button type="button" class="mini" data-act="startoff">Masquer ce guide</button></p></section>`;
+  }
+  async function startGo(k) {
+    const open = key => { const s = secState(); s[key] = true; store.set('elongo.sec', JSON.stringify(s)); };
+    const look = sel => setTimeout(() => { const el = document.querySelector(sel); if (el) { el.scrollIntoView({ block: 'center', behavior: motionReduced() ? 'auto' : 'smooth' }); const i = el.matches('input') ? el : el.querySelector('input'); if (i) i.focus({ preventScroll: true }); } }, 350);
+    if (k === 'members') { open('mem'); go('#/organisateur'); look('#addForm'); }
+    else if (k === 'invite') { open('invite'); go('#/organisateur'); look('.invite-code'); }
+    else if (k === 'orga') { open('mem'); go('#/organisateur'); look('#orgAlone, #addForm'); }
+    else if (k === 'pay') quickPayDialog();
+    else if (k === 'push') { try { await enablePush(); } catch (e) { toast("Impossible d'activer les notifications sur cet appareil."); } render(); }
+  }
   function viewHome(D) {
     const c = S.cfg, hi = (chatName() || '').split(' ')[0], me = myRow(), mi = me ? S.members.findIndex(m => m.id === me.id) : -1;
     const header = `<header><p class="eyebrow">${hi ? 'Bonjour ' + esc(hi) + ' 👋' : 'Tontine'}</p><h2 style="font-size:1.6rem">${esc(c.name)}</h2>
       <p class="hint" style="margin-top:6px">${money(c.amount)} par membre, ${freqText(c)}. ${D.n} membre${D.n > 1 ? 's' : ''}.</p></header>`;
-    if (!D.n) return header + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
+    if (!D.n) return header + startCard() + `<section class="panel empty"><h2>Aucun membre pour l'instant</h2><p>${isAdmin() ? "Ajoutez les membres ou partagez le lien d'invitation dans l'onglet Organisateur." : "L'organisateur va ajouter les membres du groupe."}</p></section>`;
     const pot = c.amount * D.n, done = Math.min(D.cur, D.n), cycle = Math.round(100 * done / D.n);
     let total = 0; S.pay.forEach(v => { total += Number(v.amount) || 0; });
     let given = 0; S.out.forEach(() => { given += pot; });
@@ -1124,7 +1157,7 @@
     const feed = `<section class="panel"><div class="chead"><h2>Activité récente</h2><a class="lnk" href="#/direct">Tout voir</a></div>${ev.length ? '<ul class="list">' + ev.map(e => `<li class="row"><span class="evic" aria-hidden="true">${e.ic}</span><div class="grow">${esc(e.t)}</div><span class="sub">${e.at ? (Math.abs(dayDiff(e.at, todayISO())) <= 6 ? esc(rel(e.at)) : esc(fmtShort(e.at))) : ''}</span></li>`).join('') + '</ul>' : '<p class="hint">Rien pour le moment : les versements et les remises apparaîtront ici.</p>'}</section>`;
     const unread = totalUnread();
     const shortcuts = `<nav class="shortcuts" aria-label="Raccourcis">${isAdmin() && !over ? '<button type="button" class="primary" data-act="quickpay">➕ Enregistrer un versement</button>' : ''}<a class="btn" href="#/tour">Voir le tour</a><a class="btn" href="#/discussion">💬 Discussion${unread ? ` <b class="cnt">${unread}</b>` : ''}</a></nav>`;
-    return header + now + shortcuts + kpis + next + feed;
+    return header + startCard() + now + shortcuts + kpis + next + feed;
   }
   // ----- admin -----
   function viewAdmin(D) {
@@ -1647,6 +1680,8 @@
       } else if (act === 'vers') {
         ui.armed = ''; const rec0 = S.pay.get(D.cur + '_' + id), inp = document.querySelector('input[data-d="v.' + id + '"]'), msel = document.querySelector('select[data-d="m.' + id + '"]');
         await recordVersement(id, Number(inp ? inp.value : S.cfg.amount - paidOf(rec0)), msel ? msel.value : '');
+      } else if (act === 'chk') { await startGo(id); return;
+      } else if (act === 'startoff') { store.set('elongo.start.' + S.tid, '1'); render(); return;
       } else if (act === 'quickpay') { quickPayDialog(); return;
       } else if (act === 'quickvers') {
         const mid = ($('qpMember') || {}).value, msel = document.querySelector('select[data-d="m.qp"]');

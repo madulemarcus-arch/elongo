@@ -639,3 +639,10 @@ button.name-link::after { content: '›'; margin-left: 4px; font-weight: 800; op
 .row.calrow { flex-wrap: nowrap; }
 .row.calrow .grow { min-width: 0; }
 .row.calrow .pill, .row.calrow .mini { flex: none; }
+
+/* First steps checklist (organizers, home screen) */
+.start .chead { margin-bottom: 8px; }
+.start .mbar { margin: 4px 0 8px; }
+.start .chk { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--tint); font-size: 1.05rem; }
+.start li.done .chk { background: var(--ok-tint); color: var(--ok); font-weight: 800; }
+.start li.done .name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
