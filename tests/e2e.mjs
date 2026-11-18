@@ -324,32 +324,41 @@ await Bp.click('[data-m=pushon]');
 await Bp.waitForFunction(() => (JSON.parse(localStorage.getItem('lisanga.demo.v1')).push_subscriptions || []).length === 1);
 step('push notifications: banner, subscribe, unsubscribe, later');
 
-// ---------- Unlock code ----------
+// ---------- Unlock code (4 digits, round keypad) ----------
+const tap = async (pg, code) => { for (const d of code) await pg.click(`[data-pk="${d}"]`); };
 await Bp.click('#userChip');
 await Bp.click('[data-m=pinform]');
-await Bp.fill('#pinNew', '12'); await Bp.fill('#pinNew2', '12'); await Bp.click('[data-m=pinsave]');
-await Bp.waitForSelector('#pinErr:has-text("4 à 6 chiffres")');
-await Bp.fill('#pinNew', '4821'); await Bp.fill('#pinNew2', '4822'); await Bp.click('[data-m=pinsave]');
-await Bp.waitForSelector('#pinErr:has-text("pas identiques")');
-await Bp.fill('#pinNew2', '4821'); await Bp.click('[data-m=pinsave]');
+await Bp.waitForSelector('.pindlg .keypad');
+assert.equal(await Bp.locator('.keypad button[data-pk]').count(), 11, 'ten digits and a delete key');
+await tap(Bp, '4821'); await Bp.waitForSelector('.pindlg .sub:has-text("Confirmez")');   // the 4th digit moves on by itself
+await tap(Bp, '4822'); await Bp.waitForSelector('#pinErr:has-text("pas identiques")');
+await Bp.waitForSelector('.pindlg .sub:has-text("Choisissez")');
+await tap(Bp, '4821'); await Bp.waitForSelector('.pindlg .sub:has-text("Confirmez")'); await tap(Bp, '4821');
 await Bp.waitForFunction(() => !document.getElementById('modal').open);
 assert.ok(!(await Bp.evaluate(() => JSON.stringify(localStorage))).includes('4821'), 'the code itself is never stored');
+assert.equal(await Bp.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('elongo.lock.')).map(k => JSON.parse(localStorage.getItem(k)).len)[0]), 4, 'the code has 4 digits');
 await Bp.reload();
-await Bp.waitForSelector('#lockIn');
-await Bp.fill('#lockIn', '0000'); await Bp.click('#lockGo');
-await Bp.waitForSelector('#lockErr:has-text("incorrect")');
-await Bp.fill('#lockIn', '4821');   // the last digit unlocks by itself
+await Bp.waitForSelector('#lockScreen .keypad');
+await tap(Bp, '0000'); await Bp.waitForSelector('#lockErr:has-text("incorrect")');
+await Bp.fill('#pinTxt', '48');   // a physical keyboard works too: the 4th digit unlocks by itself
+await Bp.keyboard.press('2'); await Bp.keyboard.press('1');
 await Bp.waitForSelector('#lockScreen', { state: 'hidden' });
 await Bp.click('#userChip');
 await Bp.click('[data-m=pinform]');
-await Bp.fill('#pinOld', '9999'); await Bp.click('[data-m=pindel]');
-await Bp.waitForSelector('#pinErr:has-text("actuel est incorrect")');
-await Bp.fill('#pinOld', '4821'); await Bp.click('[data-m=pindel]');
+await Bp.click('[data-m="pinflow:del"]');
+await tap(Bp, '9999'); await Bp.waitForSelector('#pinErr:has-text("actuel est incorrect")');
+await tap(Bp, '4821');
 await Bp.waitForFunction(() => !document.getElementById('modal').open);
 await Bp.reload();
 await Bp.waitForSelector('#userChip');
-assert.equal(await Bp.locator('#lockIn').count(), 0, 'no lock once the code is removed');
-step('unlock code: set, lock on open, wrong code, unlock, remove');
+assert.equal(await Bp.locator('#lockScreen .keypad').count(), 0, 'no lock once the code is removed');
+// An older code of 5 or 6 digits is cancelled: the code is 4 digits now
+const lockKeyName = await Bp.evaluate(() => 'elongo.lock.' + window.__lisanga.S.user.id);
+await Bp.evaluate(k => localStorage.setItem(k, JSON.stringify({ salt: 'a', hash: 'b', len: 6 })), lockKeyName);
+await Bp.reload(); await Bp.waitForSelector('#userChip');
+assert.equal(await Bp.locator('#lockScreen .keypad').count(), 0, 'a 6-digit code no longer locks');
+assert.equal(await Bp.evaluate(k => localStorage.getItem(k), lockKeyName), null, 'the old code is removed');
+step('unlock code: 4-digit keypad, set, lock on open, wrong code, unlock, remove, old codes retired');
 
 // ---------- Co-organizer ----------
 await A.click('.tabbar a[data-tab=organisateur]');

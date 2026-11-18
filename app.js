@@ -1903,7 +1903,7 @@
     if (b.dataset.m === 'pwsave') { await pwAction(); return; }
     if (b.dataset.m === 'copypw') { try { await navigator.clipboard.writeText(b.dataset.pw); toast('Mot de passe copié.'); } catch (e) { toast(b.dataset.pw); } return; }
     if (b.dataset.m === 'pinform') { pinForm(); return; }
-    if (b.dataset.m === 'pinsave' || b.dataset.m === 'pindel') { await pinAction(b.dataset.m); return; }
+    if (b.dataset.m.startsWith('pinflow:')) { pinStep(b.dataset.m.slice(8)); return; }
     $('modal').close();
     if (b.dataset.m === 'out') { ui.forcePw = false; await disablePush(); await B.signOut(); }
     else if (b.dataset.m === 'pushon') { try { await enablePush(); } catch (e) { toast('Impossible d\'activer les notifications sur cet appareil.'); } }
@@ -1966,69 +1966,99 @@
   }
 
   // ---------- Unlock code ----------
-  // Optional screen lock: each member can set a 4-6 digit code on this device. Only a salted hash is kept, in localStorage.
+  // Optional screen lock: each member can set a 4-digit code on this device, typed on a round keypad (same family as CISPOLstore Manager:
+  // dots that fill, shake on error). Only a salted hash is kept, in localStorage. A code of another length (older versions allowed 4 to 6) is retired.
+  const PIN_LEN = 4;
   const lockKey = uid => 'elongo.lock.' + uid;
-  const getLock = () => { if (!S.user) return null; try { const v = JSON.parse(store.get(lockKey(S.user.id))); return v && v.hash ? v : null; } catch (e) { return null; } };
+  const getLock = () => {
+    if (!S.user) return null;
+    try {
+      const v = JSON.parse(store.get(lockKey(S.user.id)));
+      if (v && v.hash && v.len !== PIN_LEN) { clearLock(); setTimeout(() => toast('Votre ancien code a été supprimé : le code fait maintenant 4 chiffres. Définissez-en un dans Mon compte.'), 900); return null; }
+      return v && v.hash ? v : null;
+    } catch (e) { return null; }
+  };
   async function hashPin(pin, salt) {
     const txt = salt + ':' + pin;
     try { const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(d)].map(b => pad(b.toString(16))).join(''); }
     catch (e) { let h = 2166136261; for (const c of txt) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return 'f' + (h >>> 0).toString(16); }   // insecure context fallback
   }
   const newSalt = () => { try { return [...crypto.getRandomValues(new Uint8Array(8))].map(b => pad(b.toString(16))).join(''); } catch (e) { return String(Math.random()).slice(2); } };
-  async function setLock(pin) { const salt = newSalt(); store.set(lockKey(S.user.id), JSON.stringify({ salt, hash: await hashPin(pin, salt), len: pin.length })); }
+  async function setLock(pin) { const salt = newSalt(); store.set(lockKey(S.user.id), JSON.stringify({ salt, hash: await hashPin(pin, salt), len: PIN_LEN })); }
   const clearLock = () => { try { localStorage.removeItem(lockKey(S.user.id)); } catch (e) {} };
   const lockState = { fails: 0, until: 0, hiddenAt: 0 };
+  // The keypad: dots that fill, round keys, a hidden input so that a physical keyboard (and the tests) keep working. `onFull(code)` runs at the 4th digit.
+  const padHtml = () => `<div class="pdots" id="pdots" aria-hidden="true">${'<i></i>'.repeat(PIN_LEN)}</div>
+    <input id="pinTxt" class="ptxt" type="password" inputmode="none" autocomplete="off" maxlength="${PIN_LEN}" tabindex="-1" aria-label="Code à ${PIN_LEN} chiffres">
+    <div class="keypad" role="group" aria-label="Clavier numérique">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-pk="${n}" aria-label="${n}">${n}</button>`).join('')}<span aria-hidden="true"></span><button type="button" data-pk="0" aria-label="0">0</button><button type="button" data-pk="x" aria-label="Effacer">⌫</button></div>`;
+  let padLive = null;
+  function bindPad(root, onFull) {
+    const inp = root.querySelector('#pinTxt'), dots = root.querySelector('#pdots');
+    const paint = () => dots.querySelectorAll('i').forEach((d, k) => d.classList.toggle('f', k < inp.value.length));
+    const full = () => { if (inp.value.length === PIN_LEN) onFull(inp.value); };
+    const push = k => { if (k === 'x') inp.value = inp.value.slice(0, -1); else if (inp.value.length < PIN_LEN) inp.value += k; paint(); full(); };
+    root.onclick = ev => { const b = ev.target.closest('[data-pk]'); if (b) { buzz(8); push(b.dataset.pk); } };
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, PIN_LEN); paint(); full(); });
+    const ctl = { root, push, clear() { inp.value = ''; paint(); }, shake() { dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake'); buzz(60); } };
+    padLive = ctl; return ctl;
+  }
+  document.addEventListener('keydown', ev => {   // digits and Backspace from a physical keyboard drive the visible keypad
+    if (!padLive || !padLive.root.isConnected || padLive.root.closest('[hidden]') || (padLive.root.id === 'modalBody' && !$('modal').open)) return;
+    if (document.activeElement === padLive.root.querySelector('#pinTxt')) return;   // the hidden input already types by itself
+    if (/^\d$/.test(ev.key)) padLive.push(ev.key); else if (ev.key === 'Backspace') padLive.push('x');
+  });
   function showLock() {
     const l = getLock(); if (!l) return;
     let el = $('lockScreen');
     if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lockscreen'; document.body.appendChild(el); }
-    el.innerHTML = `<div class="lockbox"><img src="icons/icon-192.png" alt="" width="64" height="64"><h1>Elongo</h1><p class="sub">Entrez votre code pour continuer.</p>
-      <input id="lockIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="Code de déverrouillage">
-      <p class="lock-err" id="lockErr" role="alert"></p>
-      <button class="primary" id="lockGo">Déverrouiller</button><button class="mini" id="lockForgot">Code oublié ?</button></div>`;
+    el.innerHTML = `<div class="lockbox"><img src="icons/icon-192.png" alt="" width="64" height="64"><h1>Elongo</h1><p class="sub">Entrez votre code</p>${padHtml()}
+      <p class="lock-err" id="lockErr" role="alert"></p><button type="button" class="lk" id="lockForgot">Code oublié ?</button></div>`;
     el.hidden = false; document.body.classList.add('locked');
-    const inp = $('lockIn'); setTimeout(() => inp.focus(), 50);
     const err = t => { $('lockErr').textContent = t; };
-    async function tryUnlock() {
+    const pd = bindPad(el, async v => {
       const wait = Math.ceil((lockState.until - Date.now()) / 1000);
-      if (wait > 0) return err(`Trop d'essais. Réessayez dans ${wait} s.`);
+      if (wait > 0) { pd.clear(); return err(`Trop d'essais. Réessayez dans ${wait} s.`); }
       const cur = getLock(); if (!cur) return hideLock();
-      if (await hashPin(inp.value, cur.salt) === cur.hash) { lockState.fails = 0; hideLock(); return; }
-      inp.value = '';
+      if (await hashPin(v, cur.salt) === cur.hash) { lockState.fails = 0; hideLock(); return; }
+      pd.clear(); pd.shake();
       if (++lockState.fails >= 5) { lockState.fails = 0; lockState.until = Date.now() + 30000; err('Code incorrect 5 fois. Patientez 30 secondes.'); } else err('Code incorrect.');
-    }
-    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, ''); if (inp.value.length === l.len) tryUnlock(); });
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
-    $('lockGo').onclick = tryUnlock;
+    });
     $('lockForgot').onclick = async () => {
-      if (!confirm('Pour retrouver l\'accès, vous allez être déconnecté puis vous reconnecter avec votre e-mail et votre mot de passe. Continuer ?')) return;
+      if (!confirm('Pour retrouver l\'accès, vous allez être déconnecté puis vous reconnecter avec votre numéro de téléphone et votre mot de passe. Continuer ?')) return;
       clearLock(); hideLock(); await disablePush(); await B.signOut();
     };
   }
-  function hideLock() { const el = $('lockScreen'); if (el) { el.hidden = true; el.innerHTML = ''; } document.body.classList.remove('locked'); }
+  function hideLock() { const el = $('lockScreen'); if (el) { el.hidden = true; el.innerHTML = ''; } document.body.classList.remove('locked'); if (padLive && padLive.root === el) padLive = null; }
   const isLocked = () => document.body.classList.contains('locked');
   function lockSection() {
     const has = !!getLock();
     return `<h3 style="margin-top:12px">Code de déverrouillage</h3>
-      <p class="hint">${has ? 'Activé sur cet appareil : le code est demandé à l\'ouverture et après une absence.' : 'Protégez l\'appli sur cet appareil avec un code de 4 à 6 chiffres que vous choisissez.'}</p>
+      <p class="hint">${has ? 'Activé sur cet appareil : le code à 4 chiffres est demandé à l\'ouverture et après une absence.' : 'Protégez l\'appli sur cet appareil avec un code de 4 chiffres que vous choisissez.'}</p>
       <p><button class="mini ${has ? '' : 'primary'}" data-m="pinform">${has ? 'Changer ou supprimer le code' : 'Définir un code'}</button></p>`;
   }
+  // Code dialog, one step at a time on the keypad: [current code] → new code → confirmation. `mode` is set / change / del.
   function pinForm() {
-    const has = !!getLock(), f = (id, label) => `<label class="f">${label}<input id="${id}" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>`;
-    $('modalBody').innerHTML = `<h2>Code de déverrouillage</h2><p class="sub">4 à 6 chiffres, uniquement sur cet appareil.</p>
-      ${has ? f('pinOld', 'Code actuel') : ''}${f('pinNew', has ? 'Nouveau code' : 'Code')}${f('pinNew2', 'Confirmer le code')}
-      <p class="lock-err" id="pinErr" role="alert"></p>
-      <div class="dlg-actions"><button class="primary" data-m="pinsave">Enregistrer</button>${has ? '<button class="danger" data-m="pindel">Supprimer le code</button>' : ''}<button data-m="close">Annuler</button></div>`;
+    if (!getLock()) { pinStep('set'); return; }
+    $('modalBody').innerHTML = `<h2>Code de déverrouillage</h2><p class="sub">Un code à 4 chiffres protège l'appli sur cet appareil.</p>
+      <div class="dlg-actions"><button class="primary" data-m="pinflow:change">Changer le code</button><button class="danger" data-m="pinflow:del">Supprimer le code</button><button data-m="close">Fermer</button></div>`;
   }
-  async function pinAction(kind) {
+  function pinStep(mode, step, first, msg) {
+    step = step || (getLock() ? 'old' : 'new');
+    const title = { old: 'Code actuel', new: mode === 'change' ? 'Nouveau code' : 'Choisissez un code', confirm: 'Confirmez le code' }[step];
+    $('modalBody').innerHTML = `<div class="pindlg"><h2>Code de déverrouillage</h2><p class="sub">${title}</p>${padHtml()}<p class="lock-err" id="pinErr" role="alert">${esc(msg || '')}</p>
+      <div class="dlg-actions"><button data-m="close">Annuler</button></div></div>`;
     const err = t => { $('pinErr').textContent = t; };
-    const cur = getLock(), val = id => ($(id) ? $(id).value : '');
-    if (cur && await hashPin(val('pinOld'), cur.salt) !== cur.hash) return err('Le code actuel est incorrect.');
-    if (kind === 'pindel') { clearLock(); $('modal').close(); toast('Code supprimé.'); return; }
-    const a = val('pinNew');
-    if (!/^\d{4,6}$/.test(a)) return err('Le code doit avoir 4 à 6 chiffres.');
-    if (a !== val('pinNew2')) return err('Les deux codes ne sont pas identiques.');
-    await setLock(a); $('modal').close(); toast('Code enregistré.');
+    const pd = bindPad($('modalBody'), async v => {
+      if (step === 'old') {
+        const cur = getLock();
+        if (!cur || await hashPin(v, cur.salt) !== cur.hash) { pd.clear(); pd.shake(); return err('Le code actuel est incorrect.'); }
+        if (mode === 'del') { clearLock(); $('modal').close(); toast('Code supprimé.'); return; }
+        return pinStep(mode, 'new');
+      }
+      if (step === 'new') return pinStep(mode, 'confirm', v);
+      if (v !== first) { pd.shake(); return pinStep(mode, 'new', null, 'Les deux codes ne sont pas identiques. Recommencez.'); }
+      await setLock(v); $('modal').close(); toast('Code enregistré.');
+    });
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) lockState.hiddenAt = Date.now();
